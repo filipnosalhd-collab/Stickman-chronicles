@@ -316,7 +316,7 @@ function snapshotWorld(){
     pvx: PL.vx, pvy: PL.vy,
     hp: PL.hp,
     score: PL.score, points: PL.points,
-    upgrades: Object.fromEntries(Object.entries(UPGRADES).map(([k,u])=>[k,{lvl:u.lvl,cost:u.cost}])),
+    upgrades: Object.fromEntries(Object.entries(UPGRADES).map(([k,u])=>[k,{lvl:u.lvl}])),
     enemies: ENEMS.map(e=>({
       x:e.x, y:e.y, hp:e.hp, mhp:e.mhp,
       state:e.state==='dead'?'dead':'idle',
@@ -605,7 +605,7 @@ function getUpg(k){return UPGRADES[k]?UPGRADES[k].lvl:0;}
 const SAVE_KEY='stickman_chronicles_v1';
 function saveGame(){
   const data={
-    upgrades: Object.fromEntries(Object.entries(UPGRADES).map(([k,u])=>[k,{lvl:u.lvl,cost:u.cost}])),
+    upgrades: Object.fromEntries(Object.entries(UPGRADES).map(([k,u])=>[k,{lvl:u.lvl}])),
     bind: BIND,
     worldSnapshot: snapshotWorld(),   // dokładna pozycja teraz
     lastCheckpoint: lastCheckpoint,   // snapshot checkpointa (null jeśli brak)
@@ -618,7 +618,7 @@ function loadGame(){
     if(!raw) return null;
     const d=JSON.parse(raw);
     if(d.upgrades) for(const[k,v] of Object.entries(d.upgrades))
-      if(UPGRADES[k]){UPGRADES[k].lvl=v.lvl;UPGRADES[k].cost=v.cost;}
+      if(UPGRADES[k]){UPGRADES[k].lvl=v.lvl;}
     if(d.bind) Object.assign(BIND,d.bind);
     if(d.lastCheckpoint) lastCheckpoint=d.lastCheckpoint;
     return d.worldSnapshot||null;
