@@ -359,7 +359,7 @@ function restoreSnapshot(snap, mode='death'){
   if(PL.y>floorY) PL.y=floorY-2;
   PL.hp = mode==='load' ? (snap.hp||PL.mhp) : PL.mhp;
   PL.points = mode==='load' ? (snap.points||0) : 0;
-  PL.score=snap.score||0;
+  PL.score=0;
   PL.vx=0; PL.vy=0;
   PL.state='idle'; PL.hurtT=0; PL.dashInvuln=0; PL.deathT=0; PL.stunT=0;
   PL.ragdoll=false; PL.ragdollT=0; PL.ragdollLandT=0; PL.ragdollGetupT=0;
@@ -587,17 +587,20 @@ function drawFires(){
 //  UPGRADES SYSTEM
 // ══════════════════════════════════════════
 const UPGRADES={
-  power:    {name:'💪 Siła',        desc:'Większe obrażenia od ciosów',       max:5,lvl:0,cost:8},
-  speed:    {name:'👟 Buty',         desc:'Szybszy bieg i wyższy skok',        max:4,lvl:0,cost:9},
-  combo:    {name:'🔥 Combo',        desc:'Szansa na cios combo po 3 uderzeniach',max:4,lvl:0,cost:10},
-  stun:     {name:'⚡ Ogłuszenie',   desc:'Szansa na ogłuszenie przeciwnika',  max:4,lvl:0,cost:11},
-  knockout: {name:'🌟 Nokaut',       desc:'Szansa na efektowny nokaut',        max:3,lvl:0,cost:15},
-  spin:     {name:'🌀 Spin Kick',    desc:'Odblokuj wirujące kopnięcie',       max:1,lvl:0,cost:20},
-  uppercut: {name:'⬆ Uppercut',     desc:'Odblokuj cios z dołu',              max:1,lvl:0,cost:20},
-  dash:     {name:'💨 Dash',         desc:'Odblokuj dash/unik (Q)',            max:2,lvl:0,cost:18},
-  regen:    {name:'❤ Regeneracja',  desc:'HP regeneruje się powoli',           max:3,lvl:0,cost:12},
-  aura:     {name:'✨ Aura',         desc:'Wizualny efekt aury wokół gracza',  max:3,lvl:0,cost:70},
+  power:    {name:'💪 Siła',        desc:'Większe obrażenia od ciosów',       max:5,lvl:0,baseCost:120},
+  speed:    {name:'👟 Buty',         desc:'Szybszy bieg i wyższy skok',        max:4,lvl:0,baseCost:140},
+  combo:    {name:'🔥 Combo',        desc:'Szansa na cios combo po 3 uderzeniach',max:4,lvl:0,baseCost:160},
+  stun:     {name:'⚡ Ogłuszenie',   desc:'Szansa na ogłuszenie przeciwnika',  max:4,lvl:0,baseCost:180},
+  knockout: {name:'🌟 Nokaut',       desc:'Szansa na efektowny nokaut',        max:3,lvl:0,baseCost:250},
+  spin:     {name:'🌀 Spin Kick',    desc:'Odblokuj wirujące kopnięcie',       max:1,lvl:0,baseCost:350},
+  uppercut: {name:'⬆ Uppercut',     desc:'Odblokuj cios z dołu',              max:1,lvl:0,baseCost:350},
+  dash:     {name:'💨 Dash',         desc:'Odblokuj dash/unik (Q)',            max:2,lvl:0,baseCost:300},
+  regen:    {name:'❤ Regeneracja',  desc:'HP regeneruje się powoli',           max:3,lvl:0,baseCost:200},
+  aura:     {name:'✨ Aura',         desc:'Wizualny efekt aury wokół gracza',  max:3,lvl:0,baseCost:70},
 };
+// ustaw cost z baseCost przy starcie
+for(const u of Object.values(UPGRADES)) u.baseCost=u.baseCost||u.cost||10;
+function upgCost(u){ return Math.round(u.baseCost*Math.pow(1.5,u.lvl)); }
 
 function getUpg(k){return UPGRADES[k]?UPGRADES[k].lvl:0;}
 
@@ -642,7 +645,8 @@ function renderUpgrPanel(){
   g.innerHTML='';
   for(const[k,u]of Object.entries(UPGRADES)){
     const maxed=u.lvl>=u.max;
-    const canAfford=PL.points>=u.cost;
+    const cost=upgCost(u);
+    const canAfford=PL.points>=cost;
     const div=document.createElement('div');
     div.className='upg-card'+(maxed?' maxed':!canAfford?' locked':'');
     const dots=Array.from({length:u.max},(_,i)=>`<div class="upg-dot${i<u.lvl?' filled':''}"></div>`).join('');
@@ -650,10 +654,9 @@ function renderUpgrPanel(){
       <div class="upg-name">${u.name.slice(u.name.indexOf(' ')+1)}</div>
       <div class="upg-desc">${u.desc}</div>
       <div class="upg-lvl">${dots}</div>
-      <div class="upg-cost">${maxed?'✓ MAX':canAfford?u.cost+' 💰':'🔒 '+u.cost+' 💰'}</div>`;
+      <div class="upg-cost">${maxed?'✓ MAX':canAfford?cost+' 💰':'🔒 '+cost+' 💰'}</div>`;
     if(!maxed&&canAfford) div.onclick=()=>{
-      PL.points-=u.cost; u.lvl++;
-      u.cost=Math.round(u.cost*1.5);
+      PL.points-=upgCost(u); u.lvl++;
       sndUpgrade();
       renderUpgrPanel();
       updateHUD();
@@ -1118,7 +1121,7 @@ function showDeathScreen(){
   const el=document.getElementById('deathScreen');
   if(!el) return;
   document.getElementById('deathMsg').textContent=DEATH_MSGS[Math.floor(Math.random()*DEATH_MSGS.length)];
-  document.getElementById('deathScore').textContent=PL.points+' 💰';
+  document.getElementById('deathScore').textContent='💰 '+PL.points+' monet';
   el.style.display='flex';
   PAUSED=true;
   // bind respawn button once
@@ -1997,10 +2000,9 @@ function eHurt(e,dmg,type){
 
   if(e.hp<=0){
     e.state='dead';e.deadT=1.1;
-    const coinReward = e.type==='boss' ? Math.round(15*(1+LEVEL*0.1)) :
-                       e.type==='heavy'? Math.round(6*(1+LEVEL*0.08)) :
-                                         Math.round(3*(1+LEVEL*0.05));
+    const coinReward = e.type==='heavy' ? Math.round(6*(1+LEVEL*0.08)) : Math.round(3*(1+LEVEL*0.05));
     PL.points+=coinReward;
+
     burst(e.x,e.y-40*e.sz,'#f11',10,200);
     burstStar(e.x,e.y-50*e.sz,'#fa0',5);
     camShake(4);flash('#f22',.15);
