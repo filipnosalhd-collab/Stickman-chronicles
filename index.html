@@ -151,7 +151,7 @@ canvas{display:block;}
     <div id="stambar"><div id="stamfill"></div></div>
   </div>
   <div id="blockCdInfo" style="color:rgba(150,150,255,.8);font-size:10px;margin-top:2px;display:none;">🛡 Cooldown: <span id="blockCdVal"></span>s</div>
-  <div id="ptsel">PUNKTY: 0</div>
+  <div id="ptsel">💰 0</div>
   <div id="cpinfo" style="color:rgba(80,255,80,.5);font-size:10px;margin-top:3px;"></div>
 </div>
 
@@ -249,7 +249,7 @@ canvas{display:block;}
   <div class="panel" style="max-height:90vh;overflow-y:auto;min-width:420px;">
     <button class="close-btn" onclick="closeUpgr()">✕</button>
     <h2>⚡ ULEPSZENIA</h2>
-    <div id="pointsDisplay" style="color:#fd4;font-size:13px;margin-bottom:12px;">Dostępne punkty: 0</div>
+    <div id="pointsDisplay" style="color:#fd4;font-size:13px;margin-bottom:12px;">💰 Monety: 0</div>
     <div class="upg-grid" id="upgGrid"></div>
   </div>
 </div>
@@ -362,6 +362,7 @@ function restoreSnapshot(snap, mode='death'){
   PL.score=snap.score||0;
   PL.vx=0; PL.vy=0;
   PL.state='idle'; PL.hurtT=0; PL.dashInvuln=0; PL.deathT=0; PL.stunT=0;
+  PL.ragdoll=false; PL.ragdollT=0; PL.ragdollLandT=0; PL.ragdollGetupT=0;
 }
 
 function addCheckpoint(x,y,id){CHECKPOINTS.push({x,y,id,activated:false,animT:0});}
@@ -586,15 +587,15 @@ function drawFires(){
 //  UPGRADES SYSTEM
 // ══════════════════════════════════════════
 const UPGRADES={
-  power:    {name:'💪 Siła',        desc:'Większe obrażenia od ciosów',       max:5,lvl:0,cost:80},
-  speed:    {name:'👟 Buty',         desc:'Szybszy bieg i wyższy skok',        max:4,lvl:0,cost:90},
-  combo:    {name:'🔥 Combo',        desc:'Szansa na cios combo po 3 uderzeniach',max:4,lvl:0,cost:100},
-  stun:     {name:'⚡ Ogłuszenie',   desc:'Szansa na ogłuszenie przeciwnika',  max:4,lvl:0,cost:110},
-  knockout: {name:'🌟 Nokaut',       desc:'Szansa na efektowny nokaut',        max:3,lvl:0,cost:150},
-  spin:     {name:'🌀 Spin Kick',    desc:'Odblokuj wirujące kopnięcie',       max:1,lvl:0,cost:200},
-  uppercut: {name:'⬆ Uppercut',     desc:'Odblokuj cios z dołu',              max:1,lvl:0,cost:200},
-  dash:     {name:'💨 Dash',         desc:'Odblokuj dash/unik (Q)',            max:2,lvl:0,cost:180},
-  regen:    {name:'❤ Regeneracja',  desc:'HP regeneruje się powoli',           max:3,lvl:0,cost:120},
+  power:    {name:'💪 Siła',        desc:'Większe obrażenia od ciosów',       max:5,lvl:0,cost:8},
+  speed:    {name:'👟 Buty',         desc:'Szybszy bieg i wyższy skok',        max:4,lvl:0,cost:9},
+  combo:    {name:'🔥 Combo',        desc:'Szansa na cios combo po 3 uderzeniach',max:4,lvl:0,cost:10},
+  stun:     {name:'⚡ Ogłuszenie',   desc:'Szansa na ogłuszenie przeciwnika',  max:4,lvl:0,cost:11},
+  knockout: {name:'🌟 Nokaut',       desc:'Szansa na efektowny nokaut',        max:3,lvl:0,cost:15},
+  spin:     {name:'🌀 Spin Kick',    desc:'Odblokuj wirujące kopnięcie',       max:1,lvl:0,cost:20},
+  uppercut: {name:'⬆ Uppercut',     desc:'Odblokuj cios z dołu',              max:1,lvl:0,cost:20},
+  dash:     {name:'💨 Dash',         desc:'Odblokuj dash/unik (Q)',            max:2,lvl:0,cost:18},
+  regen:    {name:'❤ Regeneracja',  desc:'HP regeneruje się powoli',           max:3,lvl:0,cost:12},
   aura:     {name:'✨ Aura',         desc:'Wizualny efekt aury wokół gracza',  max:3,lvl:0,cost:70},
 };
 
@@ -636,7 +637,7 @@ function stunChance() {return getUpg('stun')*.12;}
 function koChance()   {return getUpg('knockout')*.10;}
 
 function renderUpgrPanel(){
-  document.getElementById('pointsDisplay').textContent='Dostępne punkty: '+PL.points;
+  document.getElementById('pointsDisplay').textContent='💰 Monety: '+PL.points;
   const g=document.getElementById('upgGrid');
   g.innerHTML='';
   for(const[k,u]of Object.entries(UPGRADES)){
@@ -649,7 +650,7 @@ function renderUpgrPanel(){
       <div class="upg-name">${u.name.slice(u.name.indexOf(' ')+1)}</div>
       <div class="upg-desc">${u.desc}</div>
       <div class="upg-lvl">${dots}</div>
-      <div class="upg-cost">${maxed?'✓ MAX':canAfford?u.cost+' pkt':'🔒 '+u.cost+' pkt'}</div>`;
+      <div class="upg-cost">${maxed?'✓ MAX':canAfford?u.cost+' 💰':'🔒 '+u.cost+' 💰'}</div>`;
     if(!maxed&&canAfford) div.onclick=()=>{
       PL.points-=u.cost; u.lvl++;
       u.cost=Math.round(u.cost*1.5);
@@ -1117,7 +1118,7 @@ function showDeathScreen(){
   const el=document.getElementById('deathScreen');
   if(!el) return;
   document.getElementById('deathMsg').textContent=DEATH_MSGS[Math.floor(Math.random()*DEATH_MSGS.length)];
-  document.getElementById('deathScore').textContent=PL.points+' pkt';
+  document.getElementById('deathScore').textContent=PL.points+' 💰';
   el.style.display='flex';
   PAUSED=true;
   // bind respawn button once
@@ -1349,7 +1350,7 @@ const TUT_STEPS=[
   {show(){
     PAUSED=false;
     if(TUT_ORB){TUT_ORB.hidden=false; burst(TUT_ORB.x,TUT_ORB.y,'#fd4',12,110);}
-    tutBox('MONETA','Zbierz monetę! Daje punkty. Podejdź do błyszczącej kuli.','➜ Zbierz monetę', false);
+    tutBox('MONETA','Zbierz monetę! Daje 💰 monety. Podejdź do błyszczącej kuli.','➜ Zbierz monetę', false);
   }, check(){return !!(TUT_ORB&&TUT_ORB.got);}},
 
   // 4 — WALKA: wróg pojawia się, ściana znika, info zostaje aż zabijesz
@@ -1381,7 +1382,7 @@ const TUT_STEPS=[
     if(PL.points<70) PL.points=70;
     updateHUD();
     tutSpotEl('mbtn-upgr',18);
-    tutBox('ULEPSZENIA','Kliknij ⚡ w lewym górnym rogu i kup ✨ Aurę — twoje pierwsze ulepszenie! Masz 70 pkt.','Kliknij ⚡', false);
+    tutBox('ULEPSZENIA','Kliknij ⚡ w lewym górnym rogu i kup ✨ Aurę — twoje pierwsze ulepszenie! Masz 70 💰.','Kliknij ⚡', false);
     TUT_WAITING_AURA=true;
   }, check(){return getUpg('aura')>0;}},
 
@@ -1526,9 +1527,10 @@ let PLATS=[],ENEMS=[],ORBS=[],GATES=[],LEVEL=0;
 
 function addP(x,y,w,h,col='#1e2e1e'){PLATS.push({x,y,w,h,col});}
 function mkE(x,y,type='norm'){
-  const T={norm:{hp:55,spd:95,atk:13,sz:1,col:'#c0392b',score:100},     // czerwony
-           heavy:{hp:110,spd:70,atk:22,sz:1.28,col:'#8e44ad',score:250}, // fioletowy
-           boss:{hp:420,spd:52,atk:36,sz:1.7,col:'#e67e22',score:1200}}[type]; // pomarańczowy
+  const lvlScale=Math.min(LEVEL*0.04,0.8); // +4% za level, max +80%
+  const T={norm: {hp:Math.round(50*(1+lvlScale)),    spd:90+LEVEL*0.5,  atk:Math.round(11*(1+lvlScale)),  sz:1,    col:'#c0392b',score:100},
+           heavy:{hp:Math.round(100*(1+lvlScale)),   spd:65+LEVEL*0.3,  atk:Math.round(20*(1+lvlScale)),  sz:1.28, col:'#8e44ad',score:250},
+           boss: {hp:Math.round(380*(1+lvlScale*0.5)),spd:50+LEVEL*0.2, atk:Math.round(33*(1+lvlScale*0.5)),sz:1.7,col:'#e67e22',score:1200}}[type];
   return{x,y,vx:0,vy:0,type,hp:T.hp,mhp:T.hp,spd:T.spd,atk:T.atk,sz:T.sz,
     col:T.col,score:T.score,w:20*T.sz,h:72*T.sz,
     onG:false,facing:1,state:'patrol',stateT:0,aiCd:Math.random()*2,atkCd:0,
@@ -1540,6 +1542,16 @@ function mkE(x,y,type='norm'){
 // Seeded random for level generation
 function seededRnd(seed){let s=seed;return()=>{s=(s*1664525+1013904223)&0xffffffff;return(s>>>0)/0xffffffff;};}
 
+// val 5..10 → kolor od żółtego do pomarańczowego
+function orbColor(v){
+  // 5=jasny żółty, 10=głęboki pomarańczowy
+  const t=(v-5)/5; // 0..1
+  const r=255;
+  const g=Math.round(220-t*100); // 220→120
+  const b=Math.round(60-t*60);   // 60→0
+  return`rgb(${r},${g},${b})`;
+}
+
 function buildLevel(n){
   PLATS=[];ENEMS=[];ORBS=[];GATES=[];CHECKPOINTS=[];FIRES=[];SPIKES=[];LAVAS=[];
   const GY=H-58;
@@ -1550,9 +1562,9 @@ function buildLevel(n){
   const numSections=n===0?2:n===1?3:4+Math.min(diff-2,4);
   const sectionW=n===0?900:n===1?1000:1100+Math.min((diff-2)*50,400);
   const totalW=numSections*sectionW;
-  const enemyBase=n===0?1:n===1?2:3+diff;
-  const heavyChance=n===0?0:n===1?.05:Math.min(.1+(diff-2)*.06,.5);
-  const bossChance=diff>=4&&LEVEL>=50?Math.min(.08+(diff-4)*.07,.35):0;
+  const enemyBase=n===0?1:n===1?2:2+Math.floor(diff*0.7);
+  const heavyChance=n<=2?0:Math.min(.08+(diff-3)*.05,.4);  // heavy dopiero od lvl 3
+  const bossChance=0; // bossy usunięte
   const hasFires=diff>=3;
   const hasSpikes=n>=1;
   const hasLava=n>=3;
@@ -1590,7 +1602,7 @@ function buildLevel(n){
     const pw=n<=1?150+rnd()*80:110+rnd()*100;
     const pcol=LEVEL%4===0?'#2a3a2a':LEVEL%4===1?'#3a2020':LEVEL%4===2?'#1a2a3a':'#2a1a3a';
     addP(px,ph,pw,14,pcol);
-    if(rnd()<.5) ORBS.push({x:px+pw/2,y:ph-25,got:false,respawnT:0});
+    if(rnd()<.5){ const v=5+Math.floor(rnd()*6); ORBS.push({x:px+pw/2,y:ph-25,got:false,respawnT:0,val:v,col:orbColor(v)}); }
     if(hasFires&&rnd()<.15) addFire(px+pw/2,ph);
     // kolce na platformach — małe, 1-3 na platformie
     if(hasSpikes&&rnd()<.4){
@@ -1603,7 +1615,7 @@ function buildLevel(n){
 
   // ground orbs — rzadziej
   for(let ox=300;ox<levelEnd;ox+=350+rnd()*200){
-    ORBS.push({x:ox,y:GY-110,got:false,respawnT:0});
+    const _v=5+Math.floor(rnd()*6); ORBS.push({x:ox,y:GY-110,got:false,respawnT:0,val:_v,col:orbColor(_v)});
   }
 
   // fire hazards
@@ -1638,7 +1650,7 @@ function buildLevel(n){
     }
     ex2+=sectionW;
   }
-  if(diff>=4&&LEVEL>=50) ENEMS.push(mkE(levelEnd-150,GY-130,'boss'));
+  // bossy usunięte
 
   // checkpoints
   for(let cpx=800;cpx<levelEnd-200;cpx+=900+rnd()*300){
@@ -1666,8 +1678,8 @@ const PL={
   mantleT:0,mantleDur:0,mantleTargetX:0,mantleTargetY:0,mantleStartX:0,mantleStartY:0,
   blockCd:0,blockReleasedT:99,
   atkSwing:0,kickSwing:0,
-  // special anim state
-  specialAnim:null, // {type,t,dur}
+  ragdoll:false,ragdollT:0,ragdollDir:1,ragdollLandT:0,ragdollGetupT:0,
+  specialAnim:null,
 };
 
 // ══════════════════════════════════════════
@@ -1725,6 +1737,7 @@ function update(dt){
   collide(PL);
   animPL(dt);
   } // end else (nie mantle)
+  tickRagdoll(dt);
   doEnemies(dt);
   doOrbs(dt);doGates();
   tickParts(dt);tickFlash(dt);
@@ -1755,7 +1768,7 @@ function update(dt){
 function updateHUD(){
   document.getElementById('hpfill').style.width=(PL.hp/PL.mhp*100)+'%';
   document.getElementById('stamfill').style.width=(PL.stamina/100*100)+'%';
-  document.getElementById('ptsel').textContent='PUNKTY: '+PL.points;
+  document.getElementById('ptsel').textContent='💰 '+PL.points;
   const cdEl=document.getElementById('blockCdInfo');
   if(cdEl){
     if(PL.blockCd>0){
@@ -1771,6 +1784,8 @@ function updateHUD(){
 }
 
 function doInput(dt){
+  // blokada podczas ragdoll
+  if(PL.ragdoll||PL.ragdollGetupT>0){ qJump=false;qAtk=false;qKick=false;qDash=false; return; }
   // blokada akcji w tutorialu
   if(TUT_ACTIVE&&TUT_STEP>=0){
     // krok 0: tylko ustawienia (wszystko zablokowane)
@@ -1982,7 +1997,10 @@ function eHurt(e,dmg,type){
 
   if(e.hp<=0){
     e.state='dead';e.deadT=1.1;
-    PL.points+=Math.round(e.score/20); // mniej punktów za zabicie
+    const coinReward = e.type==='boss' ? Math.round(15*(1+LEVEL*0.1)) :
+                       e.type==='heavy'? Math.round(6*(1+LEVEL*0.08)) :
+                                         Math.round(3*(1+LEVEL*0.05));
+    PL.points+=coinReward;
     burst(e.x,e.y-40*e.sz,'#f11',10,200);
     burstStar(e.x,e.y-50*e.sz,'#fa0',5);
     camShake(4);flash('#f22',.15);
@@ -2010,22 +2028,49 @@ function collide(o){
   for(const p of PLATS){
     const ol=o.x-hw,or2=o.x+hw,ot=o.y-o.h,ob=o.y;
     if(or2<=p.x||ol>=p.x+p.w||ob<=p.y||ot>=p.y+p.h)continue;
-    const ov={t:ob-p.y,b:p.y+p.h-ot,l:or2-p.x,r:p.x+p.w-ol};
-    const m=Math.min(ov.t,ov.b,ov.l,ov.r);
-    if(m===ov.t&&o.vy>=0){o.y=p.y;o.vy=0;o.onG=true;
+    // użyj poprzedniej pozycji żeby wykryć z której strony weszliśmy
+    const prevY=o.y-o.vy*0.016;
+    const prevOb=prevY;
+    const prevOt=prevY-o.h;
+    const fromTop =prevOb<=p.y;   // poprzednia klatka: gracz był nad blokiem
+    const fromBot =prevOt>=p.y+p.h; // poprzednia klatka: gracz był pod blokiem
+    const fromLeft=o.x-hw>=p.x+p.w-8; // był po prawej stronie bloku
+    const fromRight=o.x+hw<=p.x+8;    // był po lewej stronie bloku
+
+    if(fromTop||(!fromBot&&!fromLeft&&!fromRight&&o.vy>=0)){
+      // wejście od góry — lądowanie
+      o.y=p.y;o.vy=0;o.onG=true;
       if(!wasG&&o===PL){PL.squash=Math.min(1,Math.abs(PL.vy)/500);sndLand(Math.min(2,Math.abs(PL.vy)/400));}
-    } else if(m===ov.b&&o.vy<0){o.y=p.y+p.h+o.h;o.vy=0;}
-    else if(m===ov.l){
-      o.x=p.x-hw;o.vx=0;
-    }
-    else{
+    } else if(fromBot){
+      // wejście od dołu — blokuj głowę
+      o.y=p.y+p.h+o.h;o.vy=0;
+    } else if(fromLeft){
       o.x=p.x+p.w+hw;o.vx=0;
+    } else {
+      o.x=p.x-hw;o.vx=0;
     }
   }
   if(o===PL&&!o.onG&&wasG)PL.coyote=.1;
 }
 
 // ── PLAYER ANIMATION ──────────────────────
+function tickRagdoll(dt){
+  if(!PL.ragdoll) return;
+  PL.ragdollT+=dt;
+  if(PL.ragdollLandT>0){
+    // na ziemi — odliczaj getup
+    PL.ragdollLandT-=dt;
+    if(PL.ragdollLandT<=0){
+      // wstaje
+      PL.ragdollGetupT=0.5;
+      PL.ragdoll=false;
+      PL.ragdollLandT=0;
+      PL.state='idle';PL.stateT=0;
+    }
+  }
+  if(PL.ragdollGetupT>0) PL.ragdollGetupT-=dt;
+}
+
 function animPL(dt){
   const moving=Math.abs(PL.vx)>30;
   if(PL.onG&&moving)PL.phase+=dt*(Math.abs(PL.vx)/180)*6.5;
@@ -2076,7 +2121,7 @@ function doEnemies(dt){
               e.stateT=0;
               setTimeout(()=>{
                 if(PL.state==='block'){burst(PL.x,PL.y-40,'#88f',5,110);beep(500,.08,'square',.05);}
-                else plHurt(e.atk);
+                else plHurt(e.atk, e.x);
               }, 180);
             }
           }
@@ -2098,7 +2143,7 @@ function doEnemies(dt){
         e.hitPending=0;
         if(e.state!=='dead'){
           if(PL.state==='block'){burst(PL.x,PL.y-40,'#88f',5,110);beep(500,.08,'square',.05);}
-          else plHurt(e.atk);
+          else plHurt(e.atk, e.x);
         }
       }
     }
@@ -2116,14 +2161,24 @@ function doEnemies(dt){
   }
 }
 
-function plHurt(dmg){
+function plHurt(dmg, attackerX){
   if(PL.hurtT>0||PL.dashInvuln>0)return;
   PL.hp=Math.max(0,PL.hp-dmg);
   PL.hurtT=.44;PL.vx=-PL.facing*200;PL.vy=-140;
   burst(PL.x,PL.y-40,'#f33',6,150);
   flash('#f00',.15);camShake(2);
   sndHit();
-  if(PL.hp<=0)plDie();
+  if(PL.hp<=0){
+    // knockdir: jeśli wróg jest przed graczem (PL.facing) → leci do tyłu (przeciwnie do facing)
+    // jeśli wróg jest za graczem → leci do przodu
+    if(attackerX!==undefined){
+      const enemyInFront = (attackerX-PL.x)*PL.facing > 0;
+      PL.deathKnockDir = enemyInFront ? -PL.facing : PL.facing;
+    } else {
+      PL.deathKnockDir = -PL.facing;
+    }
+    plDie();
+  }
 }
 function doReset(){
   if(lastCheckpoint){
@@ -2177,8 +2232,8 @@ function doOrbs(dt){
     }
     if(!o.hidden && dist(PL.x,PL.y-36,o.x,o.y)<28){
       o.got=true;o.respawnT=0;
-      PL.points+=5;
-      burst(o.x,o.y,'#fd4',8,130);sndOrb();
+      PL.points+=(o.val||5);
+      burst(o.x,o.y,o.col||'#fd4',8,130);sndOrb();
     }
   }
 }
@@ -2659,25 +2714,30 @@ function drawOrb(o){
     const pct=(o.respawnT||0)/ORB_RESPAWN;
     if(pct>0.5){
       X.globalAlpha=(pct-.5)*2*.3;
-      X.fillStyle='#fd4';X.beginPath();X.arc(o.x,o.y,5,0,PI*2);X.fill();
+      X.fillStyle=o.col||'#fd4';X.beginPath();X.arc(o.x,o.y,5,0,PI*2);X.fill();
       X.globalAlpha=1;
     }
     return;
   }
+  const col=o.col||'#ffd020';
   const t=Date.now()/1000;
   const bob=Math.sin(t*2.2+o.x*.01)*5;
   const pulse=0.85+0.15*Math.sin(t*4+o.x*.02);
   X.save();X.translate(o.x,o.y+bob);
   // outer glow
   const rg=X.createRadialGradient(0,0,0,0,0,22*pulse);
-  rg.addColorStop(0,'rgba(255,220,60,.5)');
-  rg.addColorStop(.5,'rgba(255,160,20,.2)');
+  rg.addColorStop(0,col.replace('rgb','rgba').replace(')',',0.5)'));
+  rg.addColorStop(.5,col.replace('rgb','rgba').replace(')',',0.2)'));
   rg.addColorStop(1,'rgba(0,0,0,0)');
   X.fillStyle=rg;X.beginPath();X.arc(0,0,22,0,PI*2);X.fill();
   // body gradient
   const bg=X.createRadialGradient(-3,-3,0,0,0,9*pulse);
-  bg.addColorStop(0,'#fff7aa');bg.addColorStop(.4,'#ffd020');bg.addColorStop(1,'#ff8800');
+  bg.addColorStop(0,'#fff7aa');bg.addColorStop(.4,col);bg.addColorStop(1,col.replace('rgb(','rgba(').replace(')',',0.7)'));
   X.fillStyle=bg;X.beginPath();X.arc(0,0,9*pulse,0,PI*2);X.fill();
+  // wartość
+  X.fillStyle='rgba(0,0,0,0.55)';X.font=`bold ${7+Math.floor((o.val||5)/3)}px monospace`;
+  X.textAlign='center';X.textBaseline='middle';
+  X.fillText(o.val||5,0,0);
   // sparkle rays
   X.strokeStyle='rgba(255,240,100,.6)';X.lineWidth=1.5;
   for(let i=0;i<6;i++){
@@ -2929,6 +2989,11 @@ function drawPlayer(){
     drawDeathAnim();
     return;
   }
+  // ragdoll — narysuj ludzika przewróconego
+  if(PL.ragdoll||PL.ragdollGetupT>0){
+    drawRagdoll();
+    return;
+  }
   drawStick({wx:PL.x,wy:PL.y,facing:PL.facing,sz:1,
     col:PL.hurtT>.05?'#f88':PL.dashInvuln>0?'#8af':'#fff',
     phase:PL.phase,phaseSpd:PL.phaseSpd,
@@ -2937,7 +3002,64 @@ function drawPlayer(){
     hurt:PL.hurtT>.05,hp:PL.hp,mhp:PL.mhp,type:'player',
     atkSwing:PL.atkSwing,kickSwing:PL.kickSwing,
     specialAnim:PL.specialAnim,
-    mantleT:PL.mantleT,mantleDur:PL.mantleDur});
+    mantleT:PL.mantleDur&&PL.mantleT});
+}
+
+function drawRagdoll(){
+  const t=PL.ragdollT;
+  const dir=PL.ragdollDir;
+  const onGround=PL.onG&&PL.ragdollLandT>0;
+  const getup=PL.ragdollGetupT>0;
+
+  X.save();
+  X.translate(PL.x, PL.y);
+
+  // animacja przewrotu — obrót wokół centrum
+  let rot=0;
+  if(!onGround&&!getup){
+    // lecisz w powietrzu: obrót do 90° w kierunku przewrotu
+    rot = dir * Math.min(t*3, Math.PI*0.5);
+  } else if(onGround){
+    // leżysz — płasko
+    rot = dir * Math.PI*0.5;
+  } else if(getup){
+    // wstaje — cofnij obrót do 0
+    const prog=1-(PL.ragdollGetupT/0.5);
+    rot = dir * Math.PI*0.5 * (1-prog);
+  }
+
+  X.rotate(rot);
+
+  // narysuj leżącego ludzika
+  const col='#fff';
+  X.strokeStyle=col; X.fillStyle=col;
+  X.lineWidth=3.5; X.lineCap='round';
+
+  // tułów poziomy
+  X.beginPath(); X.moveTo(-20,0); X.lineTo(20,0); X.stroke();
+  // głowa
+  X.beginPath(); X.arc(26,0,9,0,Math.PI*2);
+  X.strokeStyle=col; X.stroke();
+  // ręce (rozłożone)
+  X.beginPath(); X.moveTo(-5,-5); X.lineTo(-5,-22); X.stroke(); // lewa góra
+  X.beginPath(); X.moveTo(10,-5); X.lineTo(18,-20); X.stroke(); // prawa góra
+  // nogi
+  X.beginPath(); X.moveTo(-15,0); X.lineTo(-22,18); X.stroke();
+  X.beginPath(); X.moveTo(-8,0); X.lineTo(-5,20); X.stroke();
+
+  // gwiazdki przy głowie gdy uderzy
+  if(t<1.5&&!onGround&&!getup){
+    const ns=3;
+    for(let i=0;i<ns;i++){
+      const a=i/ns*Math.PI*2+t*4;
+      const r=16+4*Math.sin(t*6+i);
+      X.fillStyle=`rgba(255,255,80,${Math.max(0,1-t)})`;
+      X.font='12px monospace'; X.textAlign='center'; X.textBaseline='middle';
+      X.fillText('★', 26+Math.cos(a)*r, Math.sin(a)*r);
+    }
+  }
+
+  X.restore();
 }
 
 function drawDeathAnim(){
@@ -3002,18 +3124,46 @@ function drawDeathAnim(){
       }
     }
   } else {
-    // normal combat death — fall backward slowly
-    const angle=Math.min(t/.6,1)*PI*.55;
-    X.rotate(PI-angle); // fall back
-    X.globalAlpha=Math.max(0,1-t/1.4);
-    X.strokeStyle='#f55';X.fillStyle='#f55';X.lineWidth=3;X.lineCap='round';
-    // body
-    X.beginPath();X.moveTo(0,0);X.lineTo(0,-40);X.stroke();
-    X.beginPath();X.arc(0,-50,10,0,PI*2);X.fill();
-    X.beginPath();X.moveTo(0,-35);X.lineTo(-18,-25);X.stroke();
-    X.beginPath();X.moveTo(0,-35);X.lineTo(18,-22);X.stroke();
-    X.beginPath();X.moveTo(0,0);X.lineTo(-12,22);X.stroke();
-    X.beginPath();X.moveTo(0,0);X.lineTo(14,20);X.stroke();
+    // śmierć od walki — ludzik leci do tyłu (lub przodu) i pada
+    // PL.deathKnockDir: 1=do tyłu (za gracza), -1=do przodu
+    const dir=PL.deathKnockDir||1;
+    const AIRTIME=0.55; // czas lotu
+    const fadeStart=0.8;
+
+    X.globalAlpha=Math.max(0,1-(Math.max(0,t-fadeStart))/(1.4-fadeStart));
+    X.strokeStyle='#f55';X.fillStyle='#f55';X.lineWidth=3.5;X.lineCap='round';
+
+    if(t<AIRTIME){
+      // faza lotu — ludzik unosi się i obraca
+      const prog=t/AIRTIME; // 0→1
+      // łuk: leci do boku i w górę, potem spada
+      const offsetX=dir*prog*60;
+      const offsetY=-Math.sin(prog*PI)*40; // łuk w górę
+      const rot=dir*prog*PI*0.6; // obraca się 108°
+
+      X.translate(offsetX, offsetY);
+      X.rotate(rot);
+      // ludzik stojący (przewraca się w locie)
+      X.beginPath();X.moveTo(0,0);X.lineTo(0,-42);X.stroke();
+      X.beginPath();X.arc(0,-52,10,0,PI*2);X.fill();
+      X.beginPath();X.moveTo(0,-32);X.lineTo(-18*prog-8,-22);X.stroke();
+      X.beginPath();X.moveTo(0,-32);X.lineTo(18*prog+6,-20);X.stroke();
+      X.beginPath();X.moveTo(0,0);X.lineTo(-10+dir*prog*8,22);X.stroke();
+      X.beginPath();X.moveTo(0,0);X.lineTo(12+dir*prog*6,20);X.stroke();
+    } else {
+      // faza leżenia — płasko na ziemi
+      const landProg=Math.min((t-AIRTIME)/0.2,1);
+      const offsetX=dir*60;
+      X.translate(offsetX,0);
+      X.rotate(dir*PI*0.5*landProg + dir*PI*0.6*(1-landProg));
+      // leżący
+      X.beginPath();X.moveTo(-22,0);X.lineTo(22,0);X.stroke();
+      X.beginPath();X.arc(28,0,10,0,PI*2);X.fill();
+      X.beginPath();X.moveTo(-8,-2);X.lineTo(-20,-16);X.stroke();
+      X.beginPath();X.moveTo(8,-2);X.lineTo(20,-14);X.stroke();
+      X.beginPath();X.moveTo(-14,2);X.lineTo(-22,18);X.stroke();
+      X.beginPath();X.moveTo(-4,2);X.lineTo(2,20);X.stroke();
+    }
   }
   X.globalAlpha=1;
   X.restore();
