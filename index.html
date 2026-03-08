@@ -136,10 +136,32 @@ canvas{display:block;}
 #flashel{position:fixed;inset:0;pointer-events:none;z-index:6;opacity:0;transition:opacity .15s;}
 
 .pkoption:hover{background:rgba(255,200,50,.28);}
+/* ── MULTIPLAYER LOBBY ── */
+#mpOverlay{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;color:#eee;}
+#mpOverlay h2{font-size:22px;margin-bottom:18px;color:#fd4;}
+#mpOverlay .mp-box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:24px 32px;min-width:340px;max-width:440px;text-align:center;}
+#mpOverlay input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:7px;color:#eee;padding:8px 12px;font-family:monospace;font-size:14px;width:100%;margin:8px 0;outline:none;}
+#mpOverlay button{background:rgba(80,200,80,.2);border:1px solid rgba(80,200,80,.5);color:#8f8;border-radius:8px;padding:10px 22px;cursor:pointer;font-size:13px;font-family:monospace;margin:6px 4px;transition:background .2s;}
+#mpOverlay button:hover{background:rgba(80,200,80,.35);}
+#mpOverlay button.danger{background:rgba(200,60,60,.2);border-color:rgba(200,60,60,.5);color:#f88;}
+#mpOverlay .mp-link{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px 12px;font-size:11px;color:#aaa;word-break:break-all;margin:10px 0;cursor:pointer;}
+#mpOverlay .mp-players{margin:12px 0;font-size:13px;}
+#mpOverlay .mp-player-row{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:8px;}
+#mpOverlay .mp-dot{width:10px;height:10px;border-radius:50%;background:#4f4;flex-shrink:0;}
+#mpOverlay .mp-dot.waiting{background:#fa0;}
+#mpOverlay .mp-status{font-size:11px;color:#aaa;margin-top:6px;}
+#mpOverlay .mp-tabs{display:flex;gap:8px;margin-bottom:16px;}
+#mpOverlay .mp-tab{flex:1;padding:8px;border-radius:7px;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:transparent;color:#aaa;font-family:monospace;font-size:13px;}
+#mpOverlay .mp-tab.active{background:rgba(253,212,0,.15);border-color:#fd4;color:#fd4;}
+#mpNoTut{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;color:#f88;text-align:center;gap:16px;}
+#mpNoTut h2{font-size:20px;}
 </style>
 </head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 <body>
 <canvas id="c"></canvas>
+
+<!-- MP lobby jest wstrzykiwany dynamicznie przez mpInjectLobbyHTML() -->
 
 <div id="hud">
   <div style="display:flex;align-items:center;gap:7px;">
@@ -219,7 +241,10 @@ canvas{display:block;}
     <div id="tut-bind-hint">⚠ Ustaw przyciski dla wszystkich akcji aby kontynuować tutorial!</div>
     <div style="margin-top:14px;color:rgba(255,255,255,.3);font-size:11px;">Kliknij przycisk klawisza aby zmienić</div>
     <div style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px;">
-      <button onclick="resetGame()" style="background:rgba(255,60,60,.15);border:1px solid rgba(255,60,60,.4);color:#f88;border-radius:7px;padding:8px 18px;cursor:pointer;font-size:12px;width:100%;">
+      <button onclick="mpOpenFromSettings()" style="background:rgba(80,160,255,.15);border:1px solid rgba(80,160,255,.4);color:#8af;border-radius:7px;padding:8px 18px;cursor:pointer;font-size:12px;width:100%;margin-bottom:8px;">
+        🎮 Tryb Multiplayer
+      </button>
+      <button onclick="if(!MP.active)resetGame();else alert('W trybie multiplayer nie można usunąć zapisu.')" style="background:rgba(255,60,60,.15);border:1px solid rgba(255,60,60,.4);color:#f88;border-radius:7px;padding:8px 18px;cursor:pointer;font-size:12px;width:100%;" id="resetGameBtn">
         🗑 Usuń zapis i zacznij od nowa
       </button>
     </div>
@@ -256,6 +281,25 @@ canvas{display:block;}
 
 </div>
 <script>
+const MP={
+  active:false, isHost:false, roomId:null,
+  peer:null, connections:[],
+  players:{},
+  myId:null, myColor:null,
+  gatesDone:{},
+  playerCheckpoints:{},
+  ready:{},
+  started:false,
+  playerCount:1,
+  syncTimer:0,
+};
+const MP_COLS_POOL=['#ff4444','#44aaff','#44ff88','#ffcc00','#ff88ff','#00ffcc','#ff8844','#aaaaff'];
+function mpPickColor(usedCols){
+  const avail=MP_COLS_POOL.filter(c=>!usedCols.includes(c));
+  return avail.length?avail[Math.floor(Math.random()*avail.length)]:MP_COLS_POOL[Math.floor(Math.random()*MP_COLS_POOL.length)];
+}
+const MP_COLS=MP_COLS_POOL; // backwards compat
+
 const CV=document.getElementById('c'),X=CV.getContext('2d');
 CV.width=innerWidth;CV.height=innerHeight;
 const W=CV.width,H=CV.height;
@@ -307,6 +351,7 @@ function drawWeather(){
 
 // ── CHECKPOINTS ──────────────────────────
 let CHECKPOINTS=[];  // {x,y,activated,id}
+let PLATS=[],ENEMS=[],ORBS=[],GATES=[],LEVEL=0;
 let lastCheckpoint=null;  // full world snapshot
 
 function snapshotWorld(){
@@ -383,6 +428,11 @@ function tickCheckpoints(dt){
       PL.y = origY;
       setTimeout(saveGame, 80);
       sndCheckpoint();
+      // MP: synchronizuj checkpoint
+      if(typeof MP!=='undefined'&&MP.active&&MP.started){
+        MP.playerCheckpoints[MP.myId]=lastCheckpoint;
+        mpSend({type:'checkpoint',snap:lastCheckpoint});
+      }
     }
   }
 }
@@ -606,18 +656,22 @@ function getUpg(k){return UPGRADES[k]?UPGRADES[k].lvl:0;}
 
 // ── LOCALSTORAGE SAVE / LOAD ─────────────
 const SAVE_KEY='stickman_chronicles_v1';
+function mpSaveKey(){ return MP.active&&MP.roomId?'stickman_mp_'+MP.roomId:null; }
+function getSaveKey(){ return mpSaveKey()||SAVE_KEY; }
 function saveGame(){
+  if(MP.active&&!MP.started) return; // nie zapisuj w lobby
+  if(TUT_ACTIVE) return;
   const data={
     upgrades: Object.fromEntries(Object.entries(UPGRADES).map(([k,u])=>[k,{lvl:u.lvl}])),
     bind: BIND,
-    worldSnapshot: snapshotWorld(),   // dokładna pozycja teraz
-    lastCheckpoint: lastCheckpoint,   // snapshot checkpointa (null jeśli brak)
+    worldSnapshot: snapshotWorld(),
+    lastCheckpoint: lastCheckpoint,
   };
-  try{localStorage.setItem(SAVE_KEY,JSON.stringify(data));}catch(e){}
+  try{localStorage.setItem(getSaveKey(),JSON.stringify(data));}catch(e){}
 }
 function loadGame(){
   try{
-    const raw=localStorage.getItem(SAVE_KEY);
+    const raw=localStorage.getItem(getSaveKey());
     if(!raw) return null;
     const d=JSON.parse(raw);
     if(d.upgrades) for(const[k,v] of Object.entries(d.upgrades))
@@ -627,8 +681,18 @@ function loadGame(){
     return d.worldSnapshot||null;
   }catch(e){return null;}
 }
+function loadMpSave(roomId){
+  try{
+    const raw=localStorage.getItem('stickman_mp_'+roomId);
+    if(!raw) return null;
+    const d=JSON.parse(raw);
+    return d.worldSnapshot||null;
+  }catch(e){return null;}
+}
 function resetGame(){
-  try{localStorage.clear();}catch(e){}
+  // W MP nie można usunąć zapisu
+  if(MP.active) return;
+  try{localStorage.removeItem(SAVE_KEY);}catch(e){}
   location.reload();
 }
 function punchDmg(){return Math.round(20*(1+getUpg('power')*.15));}
@@ -1516,6 +1580,7 @@ function tutOrbCollected(){ /* handled via TUT_ORB.got in check() */ }
 // ══════════════════════════════════════════
 let CAM={x:0,y:0,shake:0};
 function moveCam(px,py,dt){
+  if(MP_LOBBY_ACTIVE){ CAM.x=0; CAM.y=0; CAM.shake=0; return; }
   CAM.x=lerp(CAM.x,px-W*.36,dt*7);
   CAM.y=lerp(CAM.y,py-H*.58,dt*5);
   CAM.y=clamp(CAM.y,-400,300);
@@ -1526,7 +1591,6 @@ function camShake(amt=6){CAM.shake=Math.min(CAM.shake+amt,18);}
 // ══════════════════════════════════════════
 //  WORLD
 // ══════════════════════════════════════════
-let PLATS=[],ENEMS=[],ORBS=[],GATES=[],LEVEL=0;
 
 function addP(x,y,w,h,col='#1e2e1e'){PLATS.push({x,y,w,h,col});}
 function mkE(x,y,type='norm'){
@@ -1568,9 +1632,11 @@ function buildLevel(n){
   const enemyBase=n===0?1:n===1?2:2+Math.floor(diff*0.7);
   const heavyChance=n<=2?0:Math.min(.08+(diff-3)*.05,.4);  // heavy dopiero od lvl 3
   const bossChance=0; // bossy usunięte
-  const hasFires=diff>=3;
+  const hasFires=diff>=2;
   const hasSpikes=n>=1;
+  const hasGroundSpikes=n>=2;  // kolce na ziemi od lvl 2
   const hasLava=n>=3;
+
   const gapChance=n===0?.05:n===1?.12:Math.min(.2+(diff-2)*.05,.5);
   // max wysokość skoku: vy²/(2g) = 810²/(2*1900) ≈ 173px, double jump +120px = ~290px
   const MAX_JUMP_H=260; // z zapasem
@@ -1621,9 +1687,18 @@ function buildLevel(n){
     const _v=5+Math.floor(rnd()*6); ORBS.push({x:ox,y:GY-110,got:false,respawnT:0,val:_v,col:orbColor(_v)});
   }
 
+  // ground spikes — od lvl 2, na podłodze
+  if(hasGroundSpikes){
+    const nGS=Math.floor(1+(diff-2)*1.5);
+    for(let i=0;i<nGS;i++){
+      const sx=500+rnd()*(levelEnd-900);
+      addSpike(sx,GY);
+    }
+  }
+
   // fire hazards
   if(hasFires){
-    const nFires=1+Math.floor((diff-2)*1.2);
+    const nFires=Math.floor(1+(diff-2)*1.4);
     for(let i=0;i<nFires;i++){
       const fx=400+rnd()*(levelEnd-800);
       addFire(fx,GY);
@@ -1632,10 +1707,11 @@ function buildLevel(n){
 
   // lawa — kałuże na podłodze od lvl 3
   if(hasLava){
-    const nLava=2+Math.floor(diff*.8);
+    const nLava=2+Math.floor(diff*1.1);
     for(let i=0;i<nLava;i++){
       const lx=500+rnd()*(levelEnd-900);
-      const lw=60+rnd()*80;
+      // od lvl 4 — szersze kałuże
+      const lw=n>=4?(90+rnd()*120):(60+rnd()*80);
       addLava(lx,GY,lw);
     }
   }
@@ -1660,9 +1736,29 @@ function buildLevel(n){
     addCheckpoint(cpx,GY,'cp_'+n+'_'+Math.round(cpx));
   }
 
-  const gateLabel=costToPass>0?`💰${costToPass} + zabij wszystkich`:'Zabij wszystkich →';
-  GATES.push({x:levelEnd,y:GY-220,w:55,h:220,action:'next',label:gateLabel,
-              cost:costToPass,locked:true,done:false});
+  // Bramy — warunek: zabij wszystkich, brak kosztu wejścia
+  // SP: jedna brama
+  GATES.push({x:levelEnd,y:GY-220,w:55,h:220,action:'next',label:'Zabij wszystkich →',
+              cost:0,locked:true,done:false,waiting:false});
+
+  // MP: N bram obok siebie, jedna per gracz
+  if(typeof MP!=='undefined'&&MP.active&&MP.started){
+    const pc=MP.playerCount||1;
+    if(pc>1){
+      const base=GATES[0];
+      GATES.length=0;
+      for(let i=0;i<pc;i++){
+        GATES.push({x:base.x+i*70,y:base.y,w:55,h:base.h,
+          action:'next',label:'Zabij wszystkich →',cost:0,
+          locked:true,done:false,waiting:false,
+          mpPlayerIdx:i,mpCol:MP_COLS[i]||'#fff'});
+      }
+      PLATS.push({x:base.x-30,y:H-58,w:pc*70+60,h:60,col:'#2a3a2a'});
+      // Skaluj trudność do liczby graczy
+      const mult=1+(pc-1)*0.3;
+      ENEMS.forEach(e=>{e.hp=Math.round(e.hp*mult);e.mhp=e.hp;e.atk=Math.round(e.atk*mult);});
+    }
+  }
 }
 
 // ══════════════════════════════════════════
@@ -1787,6 +1883,15 @@ function updateHUD(){
 }
 
 function doInput(dt){
+  // blokada gdy gracz stoi w bramie MP i czeka
+  if(MP.active&&MP.started){
+    const myIdx=mpMyIndex();
+    const myGateFrozen=GATES.some((g,i)=>{
+      const isMyGate=(g.mpPlayerIdx!==undefined)?g.mpPlayerIdx===myIdx:(i===myIdx%GATES.length);
+      return isMyGate&&g.waiting;
+    });
+    if(myGateFrozen){ qJump=false;qAtk=false;qKick=false;qDash=false; return; }
+  }
   // blokada podczas ragdoll
   if(PL.ragdoll||PL.ragdollGetupT>0){ qJump=false;qAtk=false;qKick=false;qDash=false; return; }
   // blokada akcji w tutorialu
@@ -1958,6 +2063,17 @@ function comboHit(){
 
 // ── ENEMY HURT ────────────────────────────
 function eHurt(e,dmg,type){
+  // W MP: klient wysyła hit do hosta, host zarządza HP
+  if(typeof MP!=='undefined'&&MP.active&&MP.started&&!MP.isHost){
+    const idx=ENEMS.indexOf(e);
+    if(idx>=0) mpSendToHost({type:'enemyHit',idx,dmg:Math.round(dmg)});
+    // Lokalna animacja hitu (wizualne) — ale HP nie zmieniaj, poczekaj na sync
+    e.hurtT=0.28; e.state='hurt'; e.stateT=0;
+    e.vx=PL.facing*80; e.vy=-80;
+    burst(e.x,e.y-40*e.sz,'#f84',6,120);
+    flash('#f00',.1); sndHit();
+    return;
+  }
   // stun check
   const stunned=stunChance()>0&&Math.random()<stunChance();
   // knockout check
@@ -2165,6 +2281,7 @@ function doEnemies(dt){
 
 function plHurt(dmg, attackerX){
   if(PL.hurtT>0||PL.dashInvuln>0)return;
+  if(MP.active&&!MP.started) return; // brak HP damage w lobby
   PL.hp=Math.max(0,PL.hp-dmg);
   PL.hurtT=.44;PL.vx=-PL.facing*200;PL.vy=-140;
   burst(PL.x,PL.y-40,'#f33',6,150);
@@ -2203,9 +2320,10 @@ function doReset(){
 function plDie(type='fall'){
   if(PL.state==='dead') return;
   if(TUT_ACTIVE){ tutHandleDeath(); return; }
-
   PL.state='dead';PL.hp=0;
   PL.deathType=type; PL.deathT=0;
+  // MP: powiadom innych
+  if(typeof MP!=='undefined'&&MP.active&&MP.started) mpSend({type:'died'});
   if(type==='burn'){
     burst(PL.x,PL.y-36,'#f80',25,200);
     burst(PL.x,PL.y-36,'#ff4',12,160);
@@ -2240,18 +2358,53 @@ function doOrbs(dt){
   }
 }
 function doGates(){
+  const allDead=ENEMS.length===0||ENEMS.every(e=>e.state==='dead');
+
+  // ── TRYB MP ──
+  if(MP.active&&MP.started){
+    const myIdx=mpMyIndex();
+    for(let i=0;i<GATES.length;i++){
+      const g=GATES[i];
+      const isMyGate=(g.mpPlayerIdx!==undefined)?g.mpPlayerIdx===myIdx:(i===myIdx%GATES.length);
+      g.locked=!allDead;
+
+      if(!isMyGate) continue; // cudzej bramy nie dotykamy logiką — można do niej wejść fizycznie ale nic się nie dzieje
+      if(g.waiting) continue; // już w niej stoję — zamrożony
+
+      const gBottom=g.y+g.h;
+      const inGate=PL.x>g.x-10&&PL.x<g.x+g.w+10&&PL.y>=g.y&&PL.y<=gBottom+10;
+      if(inGate&&!g.locked){
+        // Wejście do swojej bramy — zamroź gracza w środku
+        g.waiting=true;
+        PL.vx=0; PL.vy=0;
+        PL.state='idle';
+        // Przesuń gracza na środek bramy
+        PL.x=g.x+g.w/2;
+        mpGateDone();
+        burst(PL.x,PL.y-50,'#4f4',15,200);
+        sndLevelUp();
+      }
+    }
+    // Jeśli gracz jest w bramie — zamroź ruch
+    const myGate=GATES.find((g,i)=>{
+      const isMyGate=(g.mpPlayerIdx!==undefined)?g.mpPlayerIdx===myIdx:(i===myIdx%GATES.length);
+      return isMyGate&&g.waiting;
+    });
+    if(myGate){
+      PL.vx=0; PL.vy=0;
+      PL.x=myGate.x+myGate.w/2;
+    }
+    return;
+  }
+
+  // ── TRYB SP ──
   for(const g of GATES){
     if(g.done)continue;
-    const allDead=ENEMS.length===0||ENEMS.every(e=>e.state==='dead');
-    const canAfford=PL.points>=(g.cost||0);
-    g.locked=!allDead||!canAfford;
-    // hitbox: dolna część bramy (przy ziemi), szeroka żeby łatwo wejść
+    g.locked=!allDead;
     const gBottom=g.y+g.h;
-    // hitbox: cała brama od góry do dołu, szeroka strefa
     if(PL.x>g.x-10&&PL.x<g.x+g.w+10&&PL.y>=g.y&&PL.y<=gBottom+10){
       if(g.locked) return;
       g.done=true;
-      if(g.cost>0) PL.points=Math.max(0,PL.points-g.cost);
       if(g.action==='next'){
         sndLevelUp();
         setTimeout(()=>{LEVEL++;buildLevel(LEVEL);PL.x=120;PL.y=H-200;PL.vx=0;PL.vy=0;},600);
@@ -2280,6 +2433,7 @@ function render(){
   drawParts();
   for(const e of ENEMS)if(e.deadT>0||e.state!=='dead')drawEnemy(e);
   drawPlayer();
+  if(typeof MP!=='undefined'&&MP.active) mpDrawOtherPlayers();
   X.restore();
   drawWeather();
   // combo HUD
@@ -2292,6 +2446,33 @@ function render(){
 
 function drawBG(){
   const T=Date.now()/1000;
+
+  // ── LOBBY BG ────────────────────────────
+  if(MP_LOBBY_ACTIVE){
+    // Ciemne granatowe tło z gwiazdkami
+    const g=X.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#05050f');
+    g.addColorStop(1,'#0a0a1e');
+    X.fillStyle=g; X.fillRect(0,0,W,H);
+    // Gwiazdki
+    X.fillStyle='rgba(255,255,255,0.6)';
+    const rng=(s)=>{let x=Math.sin(s)*43758.5453;return x-Math.floor(x);};
+    for(let i=0;i<80;i++){
+      const sx=rng(i*3.1)*W, sy=rng(i*7.3)*H*0.7;
+      const ss=0.5+rng(i*13.7)*1.5;
+      const blink=0.4+0.6*Math.sin(T*rng(i*2.1)*2+i);
+      X.globalAlpha=blink*0.7;
+      X.beginPath();X.arc(sx,sy,ss,0,Math.PI*2);X.fill();
+    }
+    X.globalAlpha=1;
+    // Napis LOBBY na podłodze
+    X.fillStyle='rgba(255,255,255,0.04)';
+    X.font='bold 180px monospace';
+    X.textAlign='center';X.textBaseline='middle';
+    X.fillText('LOBBY',W/2,H/2+60);
+    X.textAlign='left';X.textBaseline='alphabetic';
+    return;
+  }
 
   // ── SKY GRADIENT ─────────────────────────
   const SKIES={
@@ -2459,16 +2640,24 @@ function drawPlat(p){
   X.fillRect(p.x,p.y,p.w,4);
 }
 function drawGate(g){
-  if(g.done)return;
+  if(g.done&&!g.waiting)return; // SP: znika po wejściu; MP: waiting=true więc nie znika
   const t=Date.now()/1000;
   const gx=g.x+g.w/2, gy=g.y+g.h;
   const locked=g.locked!==false;
   const pulse=.5+.5*Math.sin(t*2.2);
   const pulse2=.5+.5*Math.sin(t*3.7+1);
 
-  // kolory: zablokowana=czerwono-fioletowa, otwarta=cyjan-złota
-  const [r,gr,b] = locked ? [200,40,255] : [40,220,255];
-  const [r2,g2,b2] = locked ? [255,20,80] : [255,220,40];
+  // Kolor bramy zależy od stanu: locked=fiolet, waiting=złoty, open=cyjan
+  let gateOwnerCol=null;
+  if(typeof MP!=='undefined'&&MP.active&&MP.started&&g.mpPlayerIdx!==undefined){
+    const ownerId=mpAllPeerIds()[g.mpPlayerIdx];
+    gateOwnerCol=(ownerId&&MP.players[ownerId]?.col)||MP_COLS[g.mpPlayerIdx]||null;
+    g._ownerDone=MP.gatesDone&&MP.gatesDone[ownerId];
+  }
+  const waiting=g.waiting||false;
+  // locked=fiolet, waiting=złoty (gracz w środku), open=cyjan
+  const [r,gr,b] = locked ? [200,40,255] : waiting ? [255,200,0] : [40,220,255];
+  const [r2,g2,b2] = locked ? [255,20,80] : waiting ? [255,140,0] : [255,220,40];
 
   X.save();
 
@@ -2686,13 +2875,22 @@ function drawGate(g){
 
   // === LABEL NAD BRAMĄ ===
   X.globalAlpha=1;
-  // cień tekstu
   X.fillStyle='rgba(0,0,0,.6)';
   X.font='bold 12px monospace';X.textAlign='center';
   X.fillText(g.label, gx+1, g.y-archR-26);
-  // tekst właściwy
   X.fillStyle=locked?`rgba(255,150,150,.95)`:`rgba(180,255,255,.95)`;
   X.fillText(g.label, gx, g.y-archR-27);
+  // Kolorowa kropka właściciela bramy (MP)
+  if(typeof gateOwnerCol!=='undefined'&&gateOwnerCol){
+    X.save();
+    X.globalAlpha=0.95;
+    X.fillStyle=g._ownerDone?'#4f4':gateOwnerCol;
+    X.beginPath();X.arc(gx,g.y-archR-10,6,0,Math.PI*2);X.fill();
+    X.fillStyle='rgba(0,0,0,.7)';
+    X.font='bold 8px monospace';X.textAlign='center';X.textBaseline='middle';
+    X.fillText(g._ownerDone?'✓':'',gx,g.y-archR-10);
+    X.restore();
+  }
 
   // cząsteczki latające wokół bramy
   if(!locked){
@@ -2997,7 +3195,7 @@ function drawPlayer(){
     return;
   }
   drawStick({wx:PL.x,wy:PL.y,facing:PL.facing,sz:1,
-    col:PL.hurtT>.05?'#f88':PL.dashInvuln>0?'#8af':'#fff',
+    col:PL.hurtT>.05?'#f88':PL.dashInvuln>0?'#8af':(MP.active&&MP.myColor||'#fff'),
     phase:PL.phase,phaseSpd:PL.phaseSpd,
     state:PL.state,stateT:PL.stateT,
     lean:PL.lean,crouch:PL.crouch,squash:PL.squash,stretch:PL.stretch,
@@ -3005,6 +3203,7 @@ function drawPlayer(){
     atkSwing:PL.atkSwing,kickSwing:PL.kickSwing,
     specialAnim:PL.specialAnim,
     mantleT:PL.mantleDur&&PL.mantleT});
+  // Nick własnego gracza celowo nie wyświetlany
 }
 
 function drawRagdoll(){
@@ -3207,9 +3406,789 @@ requestAnimationFrame(loop);
 window.addEventListener('beforeunload', ()=>{ if(!TUT_ACTIVE) saveGame(); });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden&&!TUT_ACTIVE) saveGame(); });
 
+// Wskaźnik poziomu — lewy dolny róg
+(function(){
+  const el=document.createElement('div');
+  el.id='levelIndicator';
+  el.style.cssText='position:fixed;bottom:14px;left:14px;z-index:400;font-family:monospace;font-size:12px;color:rgba(255,255,255,.55);pointer-events:none;letter-spacing:1px;';
+  el.textContent='POZIOM 1';
+  document.body.appendChild(el);
+  // Aktualizuj co klatkę przez setInterval
+  setInterval(()=>{
+    if(el) el.textContent='POZIOM '+(LEVEL+1);
+  },200);
+})();
+
+
 // ══════════════════════════════════════════
-//  PARKOUR SYSTEM
+//  MULTIPLAYER SYSTEM (PeerJS P2P)
 // ══════════════════════════════════════════
+
+// MP declarations moved to top
+
+// ── Generuj/parsuj Room ID z URL hash ──
+function mpGetRoomId(){
+  const h=location.hash.replace('#','');
+  return h.length>=4?h:null;
+}
+function mpMakeRoomId(){
+  return 'room'+Math.random().toString(36).slice(2,7).toUpperCase();
+}
+
+// ── Lobby overlay ──
+let MP_LOBBY_ACTIVE=false;
+
+function mpBuildLobbyScene(){
+  MP_LOBBY_ACTIVE=true;
+  PAUSED=false;
+  TUT_ACTIVE=false;
+  PLATS=[];ENEMS=[];ORBS=[];GATES=[];CHECKPOINTS=[];FIRES=[];SPIKES=[];LAVAS=[];
+  const GY=H-80;
+  // Podłoga
+  PLATS.push({x:-500,y:GY,w:W+1000,h:120,col:'#1a1a2e'});
+  // Platformy do skakania
+  PLATS.push({x:60,       y:GY-150,w:150,h:16,col:'#252535'});
+  PLATS.push({x:W/2-100, y:GY-230,w:200,h:16,col:'#252535'});
+  PLATS.push({x:W-220,   y:GY-150,w:150,h:16,col:'#252535'});
+  PLATS.push({x:W/2-60,  y:GY-360,w:120,h:16,col:'#2a2a40'});
+  // Gracz na środku podłogi
+  PL.x=W/2; PL.y=GY-80;
+  PL.vx=0; PL.vy=0; PL.hp=PL.mhp;
+  PL.state='idle'; PL.hurtT=0; PL.stunT=0;
+  CAM.x=0; CAM.y=0;
+  WEATHER='night';
+}
+
+function mpShowLobby(){
+  mpInjectLobbyHTML();
+  mpInjectLeaveBtn();
+  const el=document.getElementById('mpLobbyOverlay');
+  if(el) el.style.display='block';
+  // In lobby, hide leave btn (lobby has its own UI)
+  const lb=document.getElementById('mpLeaveBtn');
+  if(lb) lb.style.display='none';
+  mpBuildLobbyScene();
+}
+function mpGetRoomLink(){
+  return location.href.split('#')[0]+'#'+MP.roomId;
+}
+function mpCopyRoomLink(btn){
+  navigator.clipboard.writeText(mpGetRoomLink()).then(()=>{
+    btn.textContent='✅ Skopiowano!';
+    setTimeout(()=>btn.textContent='📋 Kopiuj link',1800);
+  });
+}
+function mpRefreshLobbyUI(){
+  const codeBox=document.getElementById('mpCodeBox');
+  const rc=document.getElementById('mpRoomCode');
+  if(MP.isHost&&MP.roomId){
+    if(codeBox) codeBox.style.display='block';
+    if(rc){
+      const link=mpGetRoomLink();
+      rc.href=link;
+      rc.textContent='🔗 '+link;
+    }
+  } else {
+    if(codeBox) codeBox.style.display='none';
+  }
+}
+function mpHideLobby(){
+  MP_LOBBY_ACTIVE=false;
+  const el=document.getElementById('mpLobbyOverlay');if(el)el.style.display='none';
+  // Pokaż przycisk wyjścia z MP
+  mpInjectLeaveBtn();
+  const lb=document.getElementById('mpLeaveBtn');
+  if(lb) lb.style.display='block';
+}
+function mpUpdateLobbyList(){
+  const ul=document.getElementById('mpPlayerList');
+  if(!ul) return;
+  ul.innerHTML='';
+  const all=mpAllPeerIds();
+  // Wyczyść z MP.players duchy (ID których nie ma w aktywnych połączeniach)
+  Object.keys(MP.players).forEach(id=>{
+    if(!all.includes(id)) delete MP.players[id];
+  });
+  all.forEach((id,i)=>{
+    const li=document.createElement('li');
+    const rdy=MP.ready[id];
+    const isHost=i===0;
+    const isMe=id===MP.myId;
+    const col=(MP.players[id]?.col)||MP_COLS[i]||'#fff';
+    const name=(MP.players[id]?.name)||('Gracz '+(i+1));
+    const displayName=isMe?(MP.myName||name):name;
+    li.style.cssText=`display:flex;align-items:center;gap:10px;padding:8px 10px;background:#111;border:1px solid ${rdy?col+'55':'#1a1a1a'};border-radius:8px;`;
+    li.innerHTML=`
+      <div style="width:12px;height:12px;border-radius:50%;background:${col};flex-shrink:0;box-shadow:0 0 6px ${col};"></div>
+      <div style="flex:1;font-size:12px;color:${col};">${displayName}${isHost?' 👑':''}${isMe?' <span style="color:#555;font-size:10px;">(Ty)</span>':''}</div>
+      <span style="font-size:12px;">${rdy?'✅':'⏳'}</span>
+    `;
+    ul.appendChild(li);
+  });
+  for(let i=all.length;i<4;i++){
+    const li=document.createElement('li');
+    li.style.cssText='display:flex;align-items:center;gap:10px;padding:8px 10px;background:#080808;border:1px dashed #1a1a1a;border-radius:8px;';
+    li.innerHTML=`<div style="width:10px;height:10px;border-radius:50%;background:#1a1a1a;flex-shrink:0;"></div><div style="font-size:11px;color:#2a2a2a;">Czeka na gracza...</div>`;
+    ul.appendChild(li);
+  }
+  const startBtn=document.getElementById('mpStartBtn');
+  const readyBtn=document.getElementById('mpReadyBtn');
+  const _cb=document.getElementById('mpCodeBox');
+  if(!MP.myId){
+    // Jeszcze nie połączono — ukryj wszystko
+    if(startBtn) startBtn.style.display='none';
+    if(readyBtn) readyBtn.style.display='none';
+    if(_cb) _cb.style.display='none';
+  } else {
+    if(startBtn){
+      startBtn.style.display=MP.isHost?'block':'none';
+      const canStart=mpAllPeerIds().length>=2;
+      startBtn.disabled=!canStart;
+      startBtn.style.opacity=canStart?'1':'0.4';
+      startBtn.title=canStart?'':'Potrzeba co najmniej 2 graczy';
+    }
+    if(readyBtn) readyBtn.style.display=MP.isHost?'none':'block';
+    if(_cb) _cb.style.display=MP.isHost?'block':'none';
+    if(MP.isHost&&MP.roomId){ const _rc=document.getElementById('mpRoomCode');if(_rc){const _l=mpGetRoomLink();_rc.href=_l;_rc.textContent='🔗 '+_l;} }
+  }
+}
+function mpAllPeerIds(){
+  // Jeśli mamy canonical order z hosta — użyj go (taki sam u wszystkich)
+  if(MP.playerOrder&&MP.playerOrder.length>0) return [...MP.playerOrder];
+  const ids=[];
+  if(MP.myId) ids.push(MP.myId);
+  MP.connections.forEach(c=>{ if(c.peer&&!ids.includes(c.peer)) ids.push(c.peer); });
+  return ids.filter(Boolean).slice(0,4);
+}
+function mpMyCanonicalIndex(){
+  // Użyj zapisanej kolejności z wiadomości start — taka sama u wszystkich
+  if(MP.playerOrder) return MP.playerOrder.indexOf(MP.myId);
+  return mpAllPeerIds().indexOf(MP.myId);
+}
+function mpMyIndex(){
+  return mpMyCanonicalIndex();
+}
+
+// ── Init multiplayer ──
+function mpInit(){
+  const roomId=mpGetRoomId();
+  if(!roomId) return;
+
+  try{ if(!localStorage.getItem(TUT_KEY)){ mpShowNoTutOverlay(); return; } }catch(e){}
+
+  // Reset stanu
+  MP.active=true; MP.roomId=roomId; MP.isHost=false;
+  MP.myId=null; MP.peer=null; MP.connections=[];
+  MP.players={}; MP.ready={}; MP.started=false;
+
+  mpShowLobby();
+
+  const setStatus=t=>{ const el=document.getElementById('mpStatus'); if(el) el.textContent=t; };
+  const setDebug=t=>{ const el=document.getElementById('mpDebug'); if(el) el.textContent=t; };
+  setStatus('Łączenie...');
+  setDebug('room: '+roomId);
+
+  // Próbuj zająć ID pokoju = zostać hostem
+  const tryPeer=new Peer(roomId,{debug:0});
+
+  tryPeer.on('open',()=>{
+    // Zostałem hostem
+    MP.isHost=true;
+    MP.peer=tryPeer;
+    MP.myId=roomId;
+    MP.myColor=mpPickColor([]);
+    MP.players[roomId]={col:MP.myColor, name:mpGetMyName()};
+    MP.ready[roomId]=true;
+    const inp=document.getElementById('mpNameInput');
+    if(inp) inp.placeholder=mpGetMyName();
+    mpUpdateLobbyList();
+    mpRefreshLobbyUI();
+    setStatus('Jesteś hostem 👑 — wyślij link znajomym.');
+    setDebug('myId: '+MP.myId);
+
+    // Nowe połączenia od klientów
+    tryPeer.on('connection',conn=>{
+      conn.on('open',()=>{
+        if(Object.keys(MP.players).length>=4){ conn.close(); return; }
+        const pid=conn.peer;
+        MP.connections.push(conn);
+        const usedC=Object.values(MP.players).map(p=>p.col).filter(Boolean);
+        MP.players[pid]={col:mpPickColor(usedC), name:'Gracz '+(Object.keys(MP.players).length+1)};
+        MP.ready[pid]=false;
+        // Wyślij klientowi jego dane
+        conn.send({type:'welcome', myId:pid, players:MP.players, ready:MP.ready});
+        // Poinformuj innych o nowym graczu
+        mpBroadcastExcept(pid,{type:'lobby', players:MP.players, ready:MP.ready});
+        mpUpdateLobbyList();
+        setStatus('Gracz dołączył! ('+Object.keys(MP.players).length+'/4)');
+        setDebug('gracze: '+Object.keys(MP.players).join(', '));
+      });
+      conn.on('data',d=>mpHandleData(d,conn.peer));
+      conn.on('close',()=>{
+        const pid=conn.peer;
+        MP.connections=MP.connections.filter(c=>c.peer!==pid);
+        delete MP.players[pid];
+        delete MP.ready[pid];
+        if(mpAllPeerIds().length<=1){
+          // Ostatni gracz — wróć do lobby i czekaj
+          mpReturnToLobby('Gracz opuścił grę. Czekaj na kolejnych graczy...');
+        } else {
+          if(!MP.started){
+            mpBroadcast({type:'lobby', players:MP.players, ready:MP.ready});
+          }
+          mpUpdateLobbyList();
+        }
+      });
+    });
+  });
+
+  tryPeer.on('error',err=>{
+    if(err.type==='unavailable-id'){
+      // Pokój zajęty — jestem klientem
+      tryPeer.destroy();
+      setStatus('Łączenie z pokojem...');
+      const clientPeer=new Peer(undefined,{debug:0});
+      clientPeer.on('open',myId=>{
+        MP.isHost=false;
+        MP.peer=clientPeer;
+        MP.myId=myId;
+        // Nie dodawaj pustego wpisu - poczekaj na welcome od hosta
+        MP.ready[myId]=false;
+        setStatus('Łączę z hostem...');
+        const conn=clientPeer.connect(roomId,{reliable:true,serialization:'json'});
+        MP.connections=[conn];
+        conn.on('open',()=>{
+          conn.send({type:'hello',name:mpGetMyName(),col:MP.myColor});
+          setStatus('Połączono! Czekaj na start hosta.');
+          setDebug('myId: '+MP.myId+' | host: '+roomId);
+        });
+        conn.on('data',d=>mpHandleData(d,roomId));
+        conn.on('close',()=>{ setStatus('❌ Rozłączono z hostem.'); });
+        conn.on('error',e=>{ setStatus('❌ Błąd połączenia.'); console.error(e); });
+      });
+      clientPeer.on('error',e=>{ setStatus('❌ PeerJS: '+e.type); console.error(e); });
+    } else {
+      setStatus('❌ Błąd: '+err.type);
+      console.error('PeerJS error:',err);
+    }
+  });
+}
+
+function mpBroadcastExcept(excludeId,data){
+  MP.connections.forEach(c=>{ if(c.peer!==excludeId) try{c.send(data);}catch(e){} });
+}
+function mpHandleData(d,fromId){
+  // State może być przekazany przez hosta z fromId
+  const realFrom = d.fromId || fromId;
+  if(d.type==='welcome'){
+    MP.myId=d.myId;
+    MP.players=d.players||{};
+    MP.ready=d.ready||{};
+    if(MP.players[MP.myId]) MP.myColor=MP.players[MP.myId].col;
+    // Ustaw nazwę w lokalnym wpisie gracza
+    if(MP.players[MP.myId]){
+      if(MP.myName) MP.players[MP.myId].name=MP.myName;
+    }
+    mpRefreshLobbyUI();
+    // Ustaw domyślną nazwę w polu input jeśli puste
+    const inp=document.getElementById('mpNameInput');
+    if(inp&&!inp.value) inp.placeholder=mpGetMyName();
+    // Wyślij swoją nazwę do hosta jeśli już wpisana
+    if(MP.myName) mpSend({type:'nameChange',name:MP.myName});
+    mpUpdateLobbyList();
+    const el=document.getElementById('mpStatus');if(el)el.textContent='Połączono! Czekaj na start.';
+  } else if(d.type==='hello'){
+    // Klient dołączył — ustaw nazwę i kolor z wiadomości lub domyślne
+    if(MP.players[fromId]){
+      if(d.name) MP.players[fromId].name=d.name;
+      else if(!MP.players[fromId].name){ const idx=mpAllPeerIds().indexOf(fromId); MP.players[fromId].name='Gracz '+(idx+1); }
+      if(d.col) MP.players[fromId].col=d.col;
+    }
+    mpBroadcast({type:'lobby',players:MP.players,ready:MP.ready});
+    mpUpdateLobbyList();
+  } else if(d.type==='nameChange'){
+    if(MP.players[fromId]) MP.players[fromId].name=d.name||'Gracz';
+    if(MP.isHost) mpBroadcast({type:'lobby',players:MP.players,ready:MP.ready});
+    mpUpdateLobbyList();
+  } else if(d.type==='lobby'){
+    MP.players=d.players||{};
+    MP.ready=d.ready||{};
+    mpUpdateLobbyList();
+  } else if(d.type==='ready'){
+    MP.ready[fromId]=true;
+    mpBroadcast({type:'lobby',players:MP.players,ready:MP.ready});
+    mpUpdateLobbyList();
+  } else if(d.type==='start'){
+    mpStartGame(d.playerOrder,d.level||0);
+  } else if(d.type==='state'){
+    if(MP.players[realFrom]) Object.assign(MP.players[realFrom],d.player);
+    else MP.players[realFrom]=d.player;
+    // Host przekazuje stan klienta do pozostałych klientów
+    if(MP.isHost) mpBroadcastExcept(realFrom,{type:'state',fromId:realFrom,player:d.player});
+  } else if(d.type==='gateDone'){
+    MP.gatesDone[fromId]=true;
+    if(MP.isHost) mpCheckAllGatesDone();
+  } else if(d.type==='gateWaiting'){
+    // Zaznacz bramę jako zajętą (gateIdx = indeks bramy w GATES)
+    const gi=d.gateIdx;
+    if(gi!==undefined&&GATES[gi]) GATES[gi].waiting=true;
+    // Host przekazuje do pozostałych klientów
+    if(MP.isHost) mpBroadcastExcept(fromId,{type:'gateWaiting',gateIdx:gi});
+  } else if(d.type==='levelSync'){
+    if(!MP.isHost){
+      if(d.orbs) d.orbs.forEach((so,i)=>{ if(ORBS[i]) ORBS[i].got=so.got; });
+      if(d.gates) d.gates.forEach((sg,i)=>{ if(GATES[i]){ GATES[i].waiting=sg.waiting; GATES[i].locked=sg.locked; } });
+    }
+  } else if(d.type==='enemyHit'){
+    if(MP.isHost){
+      const e=ENEMS[d.idx];
+      if(e&&e.state!=='dead'){
+        e.hp=Math.max(0,e.hp-d.dmg);
+        if(e.hp<=0){e.state='dead';e.deadT=1.1;}
+        // Broadcast do WSZYSTKICH (też do tego co uderzył)
+        mpBroadcast({type:'enemySync',idx:d.idx,hp:e.hp,state:e.state,vx:e.vx,vy:e.vy});
+        // Jeśli wróg zabity — wyślij też full sync żeby wszyscy widzieli martwego
+        if(e.state==='dead') setTimeout(()=>mpSyncLevel(),50);
+      }
+    }
+  } else if(d.type==='enemySync'){
+    const e=ENEMS[d.idx];
+    if(e){
+      e.hp=d.hp;
+      if(d.state==='dead'&&e.state!=='dead'){e.state='dead';e.deadT=1.1;}
+      if(d.vx!==undefined) e.vx=d.vx;
+      if(d.vy!==undefined) e.vy=d.vy;
+    }
+  } else if(d.type==='enemyBatchSync'){
+    if(d.enemies) d.enemies.forEach((se,i)=>{
+      const e=ENEMS[i];
+      if(!e) return;
+      e.hp=se.hp; if(se.mhp) e.mhp=se.mhp;
+      if(se.state==='dead'&&e.state!=='dead'){e.state='dead';e.deadT=1.1;}
+      e.x=se.x; e.y=se.y; e.vx=se.vx; e.vy=se.vy;
+    });
+  } else if(d.type==='nextLevel'){
+    if(!MP.isHost){
+      LEVEL=d.level;
+      buildLevel(LEVEL);
+      GATES.forEach(g=>{g.waiting=false;g.done=false;});
+      PL.x=120; PL.y=H-200;
+      PL.vx=0;PL.vy=0;PL.hp=PL.mhp;PL.state='idle';
+    }
+  } else if(d.type==='checkpoint'){
+    MP.playerCheckpoints[fromId]=d.snap;
+  } else if(d.type==='died'){
+    if(MP.players[fromId]) MP.players[fromId].state='dead';
+  } else if(d.type==='respawn'){
+    if(MP.players[fromId]) Object.assign(MP.players[fromId],d.player);
+  } else if(d.type==='playerLeft'){
+    const pid=d.id||fromId;
+    delete MP.players[pid];
+    delete MP.ready[pid];
+    MP.connections=MP.connections.filter(c=>c.peer!==pid);
+    if(mpAllPeerIds().length<=1){
+      mpReturnToLobby('Host opuścił grę. Czekaj na kolejnych graczy...');
+    }
+  }
+}
+
+// Powrót do lobby bez przeładowania strony
+function mpReturnToLobby(statusMsg){
+  if(MP._returningToLobby) return;
+  MP._returningToLobby=true;
+  setTimeout(()=>{
+    MP.started=false;
+    MP.connections=[];
+    MP.players={};
+    MP.ready={};
+    MP.gatesDone={};
+    MP.playerOrder=null;
+    MP._returningToLobby=false;
+    // Ukryj przycisk wyjścia z gry
+    const lb=document.getElementById('mpLeaveBtn');
+    if(lb) lb.style.display='none';
+    // Pokaż lobby od nowa jako nowy host
+    mpShowLobby();
+    mpInit();
+    // Ustaw status
+    setTimeout(()=>{
+      const el=document.getElementById('mpStatus');
+      if(el) el.textContent=statusMsg||'Czekaj na graczy...';
+    },800);
+  },400);
+}
+
+function mpBroadcast(data){
+  MP.connections.forEach(c=>{ try{c.send(data);}catch(e){} });
+}
+function mpSendToHost(data){
+  if(MP.connections[0]) try{MP.connections[0].send(data);}catch(e){}
+}
+function mpSend(data){
+  if(MP.isHost) mpBroadcast(data);
+  else mpSendToHost(data);
+}
+
+function mpResetPlayer(){
+  // Resetuj wszystko — monety, moce, HP
+  PL.points=0; PL.score=0; PL.hp=PL.mhp;
+  PL.vx=0; PL.vy=0; PL.state='idle'; PL.hurtT=0;
+  PL.dashInvuln=0; PL.stunT=0; PL.deathT=0;
+  PL.ragdoll=false; PL.ragdollT=0; PL.ragdollGetupT=0;
+  PL.atkT=0; PL.comboCount=0; PL.comboTimer=0;
+  // Resetuj wszystkie ulepszenia do 0
+  for(const u of Object.values(UPGRADES)) u.lvl=0;
+}
+
+function mpStartGame(playerOrder,level){
+  mpHideLobby();
+  mpInjectLeaveBtn();
+  const lb=document.getElementById('mpLeaveBtn');
+  if(lb) lb.style.display='block';
+  MP.started=true;
+  if(playerOrder) MP.playerOrder=playerOrder;
+  MP.playerCount=(MP.playerOrder||[]).length||mpAllPeerIds().length;
+  PAUSED=false;
+  LEVEL=level||0;
+  // Reset gracza — monety, moce, HP od zera
+  mpResetPlayer();
+  buildLevel(LEVEL);
+  PL.x=120; PL.y=H-200;
+  updateHUD();
+}
+
+function mpHostStart(){
+  if(mpAllPeerIds().length<2){ alert('Potrzeba co najmniej 2 graczy!'); return; }
+  const order=mpAllPeerIds();
+  MP.playerCount=order.length;
+  // Użyj poziomu z zapisu MP jeśli istnieje
+  const mpSave=loadMpSave(MP.roomId);
+  const startLevel=mpSave?.level||0;
+  mpBroadcast({type:'start',playerOrder:order,level:startLevel});
+  mpStartGame(order,startLevel);
+}
+
+function mpApplyPlayerPos(){
+  PL.x=120; PL.y=H-200;
+}
+
+function mpApplyLevelSync(d){
+  if(d.enemies) d.enemies.forEach((se,i)=>{
+    const e=ENEMS[i];
+    if(!e) return;
+    e.hp=se.hp;
+    if(se.mhp) e.mhp=se.mhp;
+    if(se.state==='dead'&&e.state!=='dead'){e.state='dead';e.deadT=1.1;}
+    // Synchronizuj pozycję wrogów (żeby nie latały w różnych miejscach)
+    if(se.x!==undefined) e.x=se.x;
+    if(se.y!==undefined) e.y=se.y;
+  });
+  if(d.orbs) d.orbs.forEach((so,i)=>{ if(ORBS[i]) ORBS[i].got=so.got; });
+  if(d.gates) d.gates.forEach((sg,i)=>{ if(GATES[i]){ GATES[i].waiting=sg.waiting; GATES[i].locked=sg.locked; } });
+}
+
+// Sprawdź czy wszyscy gracze weszli do bramy
+function mpCheckAllGatesDone(){
+  const all=mpAllPeerIds();
+  if(all.every(id=>MP.gatesDone[id])){
+    Object.keys(MP.gatesDone).forEach(k=>delete MP.gatesDone[k]);
+    // Reset waiting na wszystkich bramach
+    GATES.forEach(g=>{g.waiting=false;g.done=false;});
+    if(MP.isHost){
+      LEVEL++;
+      buildLevel(LEVEL);
+      mpBroadcast({type:'nextLevel',level:LEVEL});
+      // Host i wszyscy startują na początku poziomu
+      PL.x=120; PL.y=H-200;
+      PL.vx=0;PL.vy=0;PL.hp=PL.mhp;PL.state='idle';
+      setTimeout(()=>mpSyncLevel(),100);
+    }
+  }
+}
+
+function mpSyncLevel(){
+  if(!MP.isHost) return;
+  // Szybki sync: tylko wrogowie (co ~50ms)
+  mpBroadcast({type:'enemyBatchSync',
+    enemies:ENEMS.map(e=>({hp:e.hp,mhp:e.mhp,state:e.state,x:Math.round(e.x),y:Math.round(e.y),vx:Math.round(e.vx),vy:Math.round(e.vy)}))
+  });
+}
+// Pełny sync (orby, bramy) — wolniejszy, co ~1s
+let _mpFullSyncT=0;
+function mpFullSync(){
+  if(!MP.isHost) return;
+  _mpFullSyncT++;
+  if(_mpFullSyncT<20) return; // co 20 ticków = ~1s
+  _mpFullSyncT=0;
+  mpBroadcast({type:'levelSync',
+    orbs:ORBS.map(o=>({got:o.got})),
+    gates:GATES.map(g=>({waiting:g.waiting||false,locked:g.locked||false}))
+  });
+}
+
+// ── MP Lobby loop — gracz może się ruszać ──
+
+
+
+
+
+// ── MP Tick (wywoływany w głównej pętli) ──
+function mpTick(dt){
+  if(!MP.active) return;
+  // Wywoływany co 50ms przez setInterval — wysyłaj zawsze
+  const myState={
+    name:mpGetMyName(),
+    col:MP.myColor||'#fff',
+    x:PL.x,y:PL.y,vx:PL.vx,vy:PL.vy,
+    hp:PL.hp,mhp:PL.mhp,
+    facing:PL.facing,state:PL.state,stateT:PL.stateT,
+    phase:PL.phase,hurtT:PL.hurtT,
+    points:PL.points,
+    dead:PL.state==='dead'
+  };
+  mpSend({type:'state',player:myState});
+  if(!MP.players[MP.myId]) MP.players[MP.myId]={};
+  Object.assign(MP.players[MP.myId], myState);
+  // Host synchronizuje wrogów co 50ms
+  if(MP.isHost){ mpSyncLevel(); mpFullSync(); }
+}
+
+// ── Rysuj innych graczy ──
+function mpDrawOtherPlayers(){
+  if(!MP.active) return;
+  const allIds=mpAllPeerIds();
+  // Rysuj tylko graczy z aktywnych połączeń (nie duchy z MP.players)
+  const activePeers=allIds.filter(id=>id!==MP.myId);
+  activePeers.forEach(id=>{
+    const p=MP.players[id];
+    if(!p||p.x===undefined) return;
+    const sx=p.x-CAM.x;
+    const sy=p.y-CAM.y;
+    if(sx<-100||sx>W+100) return;
+    const col=p.col||'#4cf';
+    const playerIdx=allIds.indexOf(id);
+    // Rysuj pełnym drawStick jak lokalny gracz
+    drawStick({
+      wx:p.x, wy:p.y,
+      facing:p.facing||1,
+      sz:1,
+      col:p.hurtT>0.05?'#f88':col,
+      phase:p.phase||0,
+      phaseSpd:Math.abs(p.vx||0),
+      state:p.state||'idle',
+      stateT:p.stateT||0,
+      lean:(p.vx||0)/200*0.15,
+      crouch:0, squash:0, stretch:0,
+      hurt:p.hurtT>0.05,
+      hp:p.hp||100, mhp:p.mhp||100,
+      type:'player',
+      atkSwing:p.atkSwing||0,
+      kickSwing:p.kickSwing||0,
+      specialAnim:null
+    });
+    // Nazwa i punkty nad głową (w world space — kamera już zaaplikowana przez render)
+    const nameY=p.y-108;
+    X.save();
+    X.globalAlpha=0.9;
+    X.fillStyle=col; X.font='bold 10px monospace';
+    X.textAlign='center'; X.textBaseline='bottom';
+    const displayName=p.name||(playerIdx>=0?'Gracz '+(playerIdx+1):'?');
+    X.fillText(displayName, p.x, nameY);
+    X.fillStyle='#fd4'; X.font='9px monospace';
+    X.fillText('💰'+(p.points||0), p.x, nameY-11);
+    X.restore();
+  });
+}
+
+// ── Obsłuż bramę w trybie MP ──
+function mpGateDone(){
+  MP.gatesDone[MP.myId]=true;
+  mpSend({type:'gateDone'});
+  // Poinformuj innych że ten gracz wszedł do bramy (żeby widzieli złotą bramę)
+  // Wyślij indeks bramy (=indeks gracza w canonical order)
+  const _myGateIdx=mpMyCanonicalIndex();
+  if(MP.isHost){
+    // Host broadcastuje do wszystkich (w tym do siebie już ustawione)
+    mpBroadcastExcept(MP.myId,{type:'gateWaiting',gateIdx:_myGateIdx});
+  } else {
+    mpSendToHost({type:'gateWaiting',gateIdx:_myGateIdx});
+  }
+  mpCheckAllGatesDone();
+}
+
+// ── Wyjście z MP ──
+function mpLeaveGame(){
+  if(!confirm('Wyjść z gry multiplayer?')) return;
+  // Powiadom innych
+  try{ mpBroadcast({type:'playerLeft',id:MP.myId}); }catch(e){}
+  setTimeout(()=>{
+    // Rozłącz
+    try{ MP.peer&&MP.peer.destroy(); }catch(e){}
+    // Reset MP state
+    MP.active=false; MP.started=false; MP.isHost=false;
+    MP.myId=null; MP.peer=null; MP.connections=[];
+    MP.players={}; MP.ready={};
+    // Wróć do SP (usuń hash)
+    location.hash='';
+    location.reload();
+  },200);
+}
+
+// Wstrzyknij przycisk "Wyjdź z MP" na dole ekranu
+function mpInjectLeaveBtn(){
+  if(document.getElementById('mpLeaveBtn')) return;
+  const btn=document.createElement('button');
+  btn.id='mpLeaveBtn';
+  btn.textContent='↩ Wyjdź z MP';
+  btn.style.cssText='display:none;position:fixed;bottom:14px;right:14px;z-index:500;background:rgba(200,60,60,.25);border:1px solid rgba(200,60,60,.6);color:#f88;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:11px;font-family:monospace;';
+  btn.onclick=mpLeaveGame;
+  document.body.appendChild(btn);
+}
+
+// ── Startup MP ──
+function mpInjectLobbyHTML(){
+  if(document.getElementById('mpLobbyOverlay')) return;
+  const div=document.createElement('div');
+  div.id='mpLobbyOverlay';
+  // Półprzezroczysty overlay na górze gry — gra widoczna za nim
+  div.style.cssText='display:none;position:fixed;inset:0;z-index:9999;pointer-events:none;font-family:monospace;';
+  div.innerHTML=`
+    <!-- Panel górny: tytuł + status -->
+    <div style="pointer-events:none;position:absolute;top:0;left:0;right:0;text-align:center;padding:18px 0 8px;background:linear-gradient(180deg,rgba(0,0,0,.85) 70%,transparent);">
+      <div style="font-size:10px;letter-spacing:5px;color:#555;text-transform:uppercase;">Stickman Chronicles</div>
+      <div style="font-size:26px;font-weight:bold;color:#fff;letter-spacing:2px;margin:2px 0;">MULTIPLAYER — LOBBY</div>
+      <div style="width:50px;height:1px;background:linear-gradient(90deg,transparent,#fd4,transparent);margin:6px auto;"></div>
+      <div id="mpStatus" style="font-size:11px;color:#555;">Łączenie...</div>
+      <div id="mpDebug" style="font-size:9px;color:#333;margin-top:4px;word-break:break-all;"></div>
+    </div>
+
+    <!-- Panel prawy: kod + gracze + przyciski -->
+    <div id="mpSidePanel" style="pointer-events:all;position:absolute;top:50%;right:20px;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;width:260px;">
+
+      <!-- Link do pokoju (tylko host) -->
+      <div id="mpCodeBox" style="display:none;background:rgba(0,0,0,.88);border:1px solid #222;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:9px;letter-spacing:3px;color:#444;text-transform:uppercase;margin-bottom:8px;">Link do pokoju</div>
+        <a id="mpRoomCode" href="#" target="_blank"
+          style="display:block;font-size:11px;color:#4cf;word-break:break-all;line-height:1.6;padding:10px;background:#0d0d0d;border-radius:8px;border:1px solid #1a1a1a;text-decoration:none;margin-bottom:6px;"
+          title="Kliknij aby otworzyć / wyślij znajomemu">🔗 ładowanie...</a>
+        <button id="mpCopyLinkBtn" onclick="mpCopyRoomLink(this)"
+          style="width:100%;background:rgba(80,150,255,.1);border:1px solid rgba(80,150,255,.25);color:#888;border-radius:6px;padding:7px;cursor:pointer;font-size:11px;font-family:monospace;"
+          onmouseover="this.style.color='#4cf';this.style.borderColor='rgba(80,150,255,.6)'"
+          onmouseout="this.style.color='#888';this.style.borderColor='rgba(80,150,255,.25)'">📋 Kopiuj link</button>
+      </div>
+
+      <!-- Lista graczy -->
+      <div style="background:rgba(0,0,0,.88);border:1px solid #222;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:9px;letter-spacing:3px;color:#444;text-transform:uppercase;margin-bottom:10px;">Gracze w lobby</div>
+        <ul id="mpPlayerList" style="list-style:none;display:flex;flex-direction:column;gap:7px;min-height:50px;"></ul>
+        <div style="margin-top:10px;font-size:9px;color:#222;border-top:1px solid #111;padding-top:8px;">Maks. 4 graczy</div>
+      </div>
+
+      <!-- Pole nazwy -->
+      <div style="background:rgba(0,0,0,.88);border:1px solid #222;border-radius:12px;padding:12px 16px;">
+        <div style="font-size:9px;letter-spacing:3px;color:#444;text-transform:uppercase;margin-bottom:8px;">Twoja nazwa</div>
+        <input id="mpNameInput" type="text" maxlength="16" placeholder="Gracz 1..."
+          style="width:100%;background:#0d0d0d;border:1px solid #1a1a1a;color:#fff;border-radius:6px;padding:7px 10px;font-size:12px;font-family:monospace;outline:none;box-sizing:border-box;"
+          oninput="mpSetName(this.value)"
+          onfocus="this.style.borderColor='#4cf'" onblur="this.style.borderColor='#1a1a1a'">
+      </div>
+
+      <!-- Przyciski -->
+      <button id="mpStartBtn" onclick="mpHostStart()"
+        style="display:none;width:100%;background:linear-gradient(135deg,rgba(26,58,26,.95),rgba(13,42,13,.95));border:1px solid #2a5a2a;color:#4f4;border-radius:10px;padding:13px;cursor:pointer;font-size:14px;font-family:monospace;font-weight:bold;"
+        onmouseover="this.style.borderColor='#4f4'" onmouseout="this.style.borderColor='#2a5a2a'">▶ ROZPOCZNIJ GRĘ</button>
+      <button id="mpReadyBtn" onclick="mpSendReady()"
+        style="display:none;width:100%;background:linear-gradient(135deg,rgba(26,42,58,.95),rgba(13,26,42,.95));border:1px solid #2a4a6a;color:#4af;border-radius:10px;padding:13px;cursor:pointer;font-size:14px;font-family:monospace;font-weight:bold;"
+        onmouseover="this.style.borderColor='#4af'" onmouseout="this.style.borderColor='#2a4a6a'">✅ GOTOWY</button>
+    </div>
+
+    <!-- Dół: instrukcja sterowania -->
+    <div style="pointer-events:none;position:absolute;bottom:0;left:0;right:0;text-align:center;padding:8px 0 14px;background:linear-gradient(0deg,rgba(0,0,0,.7) 60%,transparent);">
+      <div style="font-size:10px;color:#333;">Możesz się poruszać i walczyć — HP nie tracisz w lobby</div>
+    </div>
+  `;
+  document.body.appendChild(div);
+}
+
+
+function mpSetName(val){
+  const trimmed=val.trim();
+  MP.myName=trimmed||null; // null = użyj domyślnej nazwy
+  // Zaktualizuj u siebie
+  if(MP.myId&&MP.players[MP.myId]) MP.players[MP.myId].name=mpGetMyName();
+  // Wyślij do hosta/graczy
+  if(MP.active) mpSend({type:'nameChange',name:mpGetMyName()});
+  mpUpdateLobbyList();
+}
+function mpGetMyName(){
+  if(MP.myName) return MP.myName;
+  // Użyj nazwy zapisanej w players jeśli istnieje
+  if(MP.myId&&MP.players[MP.myId]&&MP.players[MP.myId].name) return MP.players[MP.myId].name;
+  const idx=mpAllPeerIds().indexOf(MP.myId);
+  return idx>=0?'Gracz '+(idx+1):'Gracz';
+}
+
+function mpShowNoTutOverlay(){
+  const div=document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;color:#fff;gap:16px;';
+  div.innerHTML=`
+    <div style="font-size:22px;font-weight:bold;color:#f44;">⚠ Brak ukończonego tutoriala</div>
+    <div style="color:#aaa;font-size:14px;text-align:center;">Musisz ukończyć tutorial w trybie singleplayer,<br>zanim będziesz mógł dołączyć do gry multiplayer.</div>
+    <button onclick="location.hash='';location.reload()" style="background:rgba(255,200,80,.2);border:1px solid rgba(255,200,80,.5);color:#fd4;border-radius:8px;padding:10px 24px;cursor:pointer;font-size:13px;font-family:monospace;">🎮 Przejdź do singleplayera</button>
+  `;
+  document.body.appendChild(div);
+}
+
+function mpSendReady(){
+  MP.ready[MP.myId]=true;
+  mpSend({type:'ready'});
+  const btn=document.getElementById('mpReadyBtn');
+  if(btn){btn.textContent='✅ Gotowy!';btn.disabled=true;}
+  mpUpdateLobbyList();
+}
+
+// Inject lobby HTML
+mpInjectLobbyHTML();
+
+// Przycisk Multiplayer w singleplayerze
+setTimeout(()=>{
+  if(!mpGetRoomId()){
+    const btn=document.createElement('button');
+    btn.textContent='🌐 Multiplayer';
+    btn.style.cssText='position:fixed;top:12px;right:60px;z-index:100;background:rgba(80,150,255,.2);border:1px solid rgba(80,150,255,.5);color:#8af;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;font-family:monospace;';
+    btn.onclick=()=>{
+      const id=mpMakeRoomId();
+      location.hash=id;
+      mpInit();
+    };
+    document.body.appendChild(btn);
+  }
+},200);
+
+// Uruchom MP jeśli jest hash
+if(mpGetRoomId()){
+  setTimeout(mpInit,500);
+}
+
+// Otwórz MP z panelu ustawień
+function mpOpenFromSettings(){
+  closeSettings();
+  if(mpGetRoomId()){
+    // Już w pokoju — pokaż lobby
+    mpShowLobby();
+    mpInit();
+  } else {
+    // Stwórz nowy pokój
+    const id=mpMakeRoomId();
+    location.hash=id;
+    mpInit();
+  }
+}
+
+// MP tick przez setInterval
+setInterval(()=>{
+  if(MP.active&&!PAUSED) mpTick(0.05);
+},50);
 
 </script>
 </body>
