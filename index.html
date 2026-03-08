@@ -1621,6 +1621,8 @@ function orbColor(v){
 
 function buildLevel(n){
   PLATS=[];ENEMS=[];ORBS=[];GATES=[];CHECKPOINTS=[];FIRES=[];SPIKES=[];LAVAS=[];
+  // Resetuj kamerę na początek levelu
+  CAM.x=0; CAM.y=0; CAM.shake=0;
   const GY=H-58;
   const rnd=seededRnd(n*7919+31337);
 
@@ -2311,7 +2313,7 @@ function doReset(){
     beep(660,.12,'sine',.05);
   } else {
     buildLevel(LEVEL);
-    PL.x = 120; PL.y = H - 200;
+    PL.x = 120; PL.y = H - 61;
     PL.vx = 0; PL.vy = 0; PL.hp = PL.mhp;
     PL.state = 'idle'; PL.hurtT = 0;
     beep(220,.15,'sawtooth',.05);
@@ -2407,7 +2409,7 @@ function doGates(){
       g.done=true;
       if(g.action==='next'){
         sndLevelUp();
-        setTimeout(()=>{LEVEL++;buildLevel(LEVEL);PL.x=120;PL.y=H-200;PL.vx=0;PL.vy=0;},600);
+        setTimeout(()=>{LEVEL++;buildLevel(LEVEL);PL.x=120;PL.y=H-61;PL.vx=0;PL.vy=0;},600);
       }
     }
   }
@@ -2875,11 +2877,13 @@ function drawGate(g){
 
   // === LABEL NAD BRAMĄ ===
   X.globalAlpha=1;
-  X.fillStyle='rgba(0,0,0,.6)';
   X.font='bold 12px monospace';X.textAlign='center';
+  // Cień
+  X.fillStyle='rgba(0,0,0,.7)';
   X.fillText(g.label, gx+1, g.y-archR-26);
-  X.fillStyle=locked?`rgba(255,150,150,.95)`:`rgba(180,255,255,.95)`;
-  X.fillText(g.label, gx, g.y-archR-27);
+  // Tekst (tylko raz, nie dwa razy z różnymi offsetami)
+  X.fillStyle=locked?'rgba(255,120,120,.95)':'rgba(180,255,255,.95)';
+  X.fillText(g.label, gx, g.y-archR-26);
   // Kolorowa kropka właściciela bramy (MP)
   if(typeof gateOwnerCol!=='undefined'&&gateOwnerCol){
     X.save();
@@ -3772,7 +3776,7 @@ function mpHandleData(d,fromId){
       LEVEL=d.level;
       buildLevel(LEVEL);
       GATES.forEach(g=>{g.waiting=false;g.done=false;});
-      PL.x=120; PL.y=H-200;
+      PL.x=120; PL.y=H-61;
       PL.vx=0;PL.vy=0;PL.hp=PL.mhp;PL.state='idle';
     }
   } else if(d.type==='checkpoint'){
@@ -3853,7 +3857,7 @@ function mpStartGame(playerOrder,level){
   // Reset gracza — monety, moce, HP od zera
   mpResetPlayer();
   buildLevel(LEVEL);
-  PL.x=120; PL.y=H-200;
+  PL.x=120; PL.y=H-61;
   updateHUD();
 }
 
@@ -3869,7 +3873,7 @@ function mpHostStart(){
 }
 
 function mpApplyPlayerPos(){
-  PL.x=120; PL.y=H-200;
+  PL.x=120; PL.y=H-61;
 }
 
 function mpApplyLevelSync(d){
@@ -3899,7 +3903,7 @@ function mpCheckAllGatesDone(){
       buildLevel(LEVEL);
       mpBroadcast({type:'nextLevel',level:LEVEL});
       // Host i wszyscy startują na początku poziomu
-      PL.x=120; PL.y=H-200;
+      PL.x=120; PL.y=H-61;
       PL.vx=0;PL.vy=0;PL.hp=PL.mhp;PL.state='idle';
       setTimeout(()=>mpSyncLevel(),100);
     }
